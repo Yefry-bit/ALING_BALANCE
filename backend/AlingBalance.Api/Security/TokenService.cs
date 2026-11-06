@@ -12,9 +12,21 @@ public sealed class TokenService(IOptions<JwtOptions> options)
 {
     private readonly JwtOptions _options = options.Value;
 
-    public (string Token, DateTime ExpiresAt) Create(AppUser user)
+    /// <summary>Claim que indica una sesión recordada (dura días).</summary>
+    public const string RememberClaim = "remember";
+
+    /// <summary>Claim con el <see cref="AppUser.SecurityStamp"/> vigente.</summary>
+    public const string StampClaim = "stamp";
+
+    /// <summary>Código nuevo para invalidar las sesiones anteriores.</summary>
+    public static string NewStamp() => Guid.NewGuid().ToString("N");
+
+    public (string Token, DateTime ExpiresAt) Create(AppUser user, bool remember = false)
     {
-        var expiresAt = DateTime.UtcNow.AddMinutes(_options.ExpiryMinutes);
+        var now = DateTime.UtcNow;
+        var expiresAt = remember
+            ? now.AddDays(_options.RememberDays)
+            : now.AddMinutes(_options.ExpiryMinutes);
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.Key));
 
         var descriptor = new SecurityTokenDescriptor
@@ -25,6 +37,8 @@ public sealed class TokenService(IOptions<JwtOptions> options)
                 new Claim("name", user.Name),
                 new Claim("username", user.Username),
                 new Claim("role", user.Role),
+                new Claim(RememberClaim, remember ? "true" : "false"),
+                new Claim(StampClaim, user.SecurityStamp ?? string.Empty),
             }),
             Issuer = _options.Issuer,
             Audience = _options.Audience,

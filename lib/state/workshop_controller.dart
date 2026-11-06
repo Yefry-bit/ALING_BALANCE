@@ -1,3 +1,5 @@
+import '../models/commission_payment.dart';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/service_photo.dart';
@@ -36,6 +38,8 @@ class WorkshopController extends ChangeNotifier {
   final List<Employee> _employees = [];
   final List<Client> _clients = [];
   final List<Expense> _expenses = [];
+  final List<RecurringExpense> _recurring = [];
+  final List<CommissionPayment> _payments = [];
 
   bool _isLoading = true;
   String? _loadError;
@@ -52,6 +56,13 @@ class WorkshopController extends ChangeNotifier {
   List<Employee> get employees => List.unmodifiable(_employees);
   List<Client> get clients => List.unmodifiable(_clients);
   List<Expense> get expenses => List.unmodifiable(_expenses);
+
+  /// Gastos fijos mensuales (solo administradores).
+  List<RecurringExpense> get recurringExpenses => List.unmodifiable(_recurring);
+
+  /// Pagos de comisiones, del más reciente al más antiguo.
+  List<CommissionPayment> get commissionPayments =>
+      List.unmodifiable(_payments);
 
   int get totalRevenue {
     return _services.fold<int>(0, (total, item) => total + item.price);
@@ -159,7 +170,11 @@ class WorkshopController extends ChangeNotifier {
         _repository.fetchServices(),
         _repository.fetchEmployees(),
         _repository.fetchClients(),
-        if (includeFinances) _repository.fetchExpenses(),
+        if (includeFinances) ...[
+          _repository.fetchExpenses(),
+          _repository.fetchRecurringExpenses(),
+          _repository.fetchCommissionPayments(),
+        ],
       ]);
 
       _services
@@ -175,6 +190,12 @@ class WorkshopController extends ChangeNotifier {
         _expenses
           ..clear()
           ..addAll(results[3] as List<Expense>);
+        _recurring
+          ..clear()
+          ..addAll(results[4] as List<RecurringExpense>);
+        _payments
+          ..clear()
+          ..addAll(results[5] as List<CommissionPayment>);
       }
       _loadError = null;
     } on ApiException catch (error) {
@@ -208,6 +229,26 @@ class WorkshopController extends ChangeNotifier {
         operation,
         newStatus,
       );
+      final current = _services.indexWhere((s) => s.operation == operation);
+      if (current != -1) _services[current] = updated;
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  /// Cambia el empleado que realiza un servicio (la comisión pasa al nuevo).
+  Future<String?> assignEmployee(int operation, int employeeId) async {
+    final index = _services.indexWhere((s) => s.operation == operation);
+    if (index == -1) return 'No se encontró el servicio.';
+    if (_services[index].commissionPaid) {
+      return 'No se puede cambiar el empleado: la comisión de este servicio '
+          'ya se pagó.';
+    }
+
+    try {
+      final updated = await _repository.assignEmployee(operation, employeeId);
       final current = _services.indexWhere((s) => s.operation == operation);
       if (current != -1) _services[current] = updated;
       notifyListeners();
@@ -468,6 +509,19 @@ class WorkshopController extends ChangeNotifier {
     }
   }
 
+  Future<String?> updateExpense(int id, NewExpenseData data) async {
+    try {
+      final updated = await _repository.updateExpense(id, data);
+      final index = _expenses.indexWhere((e) => e.id == id);
+      if (index != -1) _expenses[index] = updated;
+      _expenses.sort((a, b) => b.date.compareTo(a.date));
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
   Future<String?> deleteExpense(int id) async {
     try {
       await _repository.deleteExpense(id);
@@ -479,10 +533,205 @@ class WorkshopController extends ChangeNotifier {
     }
   }
 
+  // ------------------------------------------------------------ Gastos fijos
+
+  Future<String?> addRecurringExpense(RecurringExpenseData data) async {
+    try {
+      final created = await _repository.createRecurringExpense(data);
+      _recurring.add(created);
+      _sortRecurring();
+      // El servidor pudo registrar ya el gasto de este mes.
+      await _reloadExpenses();
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  Future<String?> updateRecurringExpense(
+    int id,
+    RecurringExpenseData data,
+  ) async {
+    try {
+      final updated = await _repository.updateRecurringExpense(id, data);
+      final index = _recurring.indexWhere((r) => r.id == id);
+      if (index != -1) _recurring[index] = updated;
+      _sortRecurring();
+      await _reloadExpenses();
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  /// Pausa o reanuda un gasto fijo.
+  Future<String?> toggleRecurringExpense(RecurringExpense item) {
+    return updateRecurringExpense(
+      item.id,
+      RecurringExpenseData(
+        description: item.description,
+        category: item.category,
+        amount: item.amount,
+        dayOfMonth: item.dayOfMonth,
+        active: !item.active,
+      ),
+    );
+  }
+
+  /// Elimina el gasto fijo; los gastos ya registrados se conservan.
+  Future<String?> deleteRecurringExpense(int id) async {
+    try {
+      await _repository.deleteRecurringExpense(id);
+      _recurring.removeWhere((r) => r.id == id);
+      await _reloadExpenses();
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  void _sortRecurring() {
+    _recurring.sort((a, b) {
+      final byDay = a.dayOfMonth.compareTo(b.dayOfMonth);
+      return byDay != 0 ? byDay : a.description.compareTo(b.description);
+    });
+  }
+
+  Future<void> _reloadExpenses() async {
+    final expenses = await _repository.fetchExpenses();
+    _expenses
+      ..clear()
+      ..addAll(expenses);
+  }
+
+  // ------------------------------------------------------ Pago de comisiones
+
+  /// Comisiones de cada empleado en el mes: generadas, pagadas y pendientes.
+  /// Solo aparecen los empleados con servicios terminados en ese mes.
+  List<MonthlyCommission> commissionsForMonth(int year, int month) {
+    final names = <int, String>{};
+    final finished = <int, int>{};
+    final amount = <int, int>{};
+    final paid = <int, int>{};
+    final pending = <int, List<int>>{};
+
+    for (final service in _services) {
+      final id = service.employeeId;
+      if (id == null || service.status != ServiceStatus.finished) continue;
+      if (!_inMonth(service.date, year, month)) continue;
+
+      names[id] ??= service.employeeName;
+      finished[id] = (finished[id] ?? 0) + 1;
+      final commission = commissionFor(service);
+      amount[id] = (amount[id] ?? 0) + commission;
+      if (service.commissionPaid) {
+        paid[id] = (paid[id] ?? 0) + commission;
+      } else {
+        (pending[id] ??= []).add(service.operation);
+      }
+    }
+
+    for (final employee in _employees) {
+      if (names.containsKey(employee.id)) names[employee.id] = employee.name;
+    }
+
+    final result = [
+      for (final id in names.keys)
+        MonthlyCommission(
+          employeeId: id,
+          employeeName: names[id]!,
+          finishedCount: finished[id] ?? 0,
+          amount: amount[id] ?? 0,
+          paidAmount: paid[id] ?? 0,
+          pendingOperations: List.unmodifiable(pending[id] ?? const <int>[]),
+        ),
+    ];
+    result.sort((a, b) => b.amount.compareTo(a.amount));
+    return result;
+  }
+
+  /// Pagos registrados para un mes.
+  List<CommissionPayment> paymentsIn(int year, int month) {
+    return _payments.where((p) => p.year == year && p.month == month).toList();
+  }
+
+  /// Marca como pagadas las comisiones pendientes del empleado en el mes.
+  Future<String?> payCommissions(int employeeId, int year, int month) async {
+    final item = commissionsForMonth(
+      year,
+      month,
+    ).where((c) => c.employeeId == employeeId).firstOrNull;
+    if (item == null || item.pendingOperations.isEmpty) {
+      return 'No hay comisiones pendientes de ese empleado en el mes.';
+    }
+
+    try {
+      final payment = await _repository.payCommissions(
+        employeeId: employeeId,
+        year: year,
+        month: month,
+        operations: item.pendingOperations,
+      );
+      _payments.insert(0, payment);
+      _markServices(
+        item.pendingOperations.toSet(),
+        (s) => s.copyWith(commissionPaymentId: payment.id),
+      );
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  /// Deshace un pago: sus servicios vuelven a quedar pendientes.
+  Future<String?> undoCommissionPayment(int paymentId) async {
+    try {
+      await _repository.undoCommissionPayment(paymentId);
+      _payments.removeWhere((p) => p.id == paymentId);
+      for (var i = 0; i < _services.length; i++) {
+        if (_services[i].commissionPaymentId == paymentId) {
+          _services[i] = _services[i].copyWith(clearPayment: true);
+        }
+      }
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  void _markServices(
+    Set<int> operations,
+    ServiceRecord Function(ServiceRecord) change,
+  ) {
+    for (var i = 0; i < _services.length; i++) {
+      if (operations.contains(_services[i].operation)) {
+        _services[i] = change(_services[i]);
+      }
+    }
+  }
+
   // ------------------------------------------------------- Resumen mensual
 
   static bool _inMonth(DateTime date, int year, int month) =>
       date.year == year && date.month == month;
+
+  /// Servicios terminados registrados en el mes (los que cuentan como
+  /// ingreso), del más antiguo al más reciente.
+  List<ServiceRecord> servicesFinishedIn(int year, int month) {
+    return _services
+        .where(
+          (s) =>
+              s.status == ServiceStatus.finished &&
+              _inMonth(s.date, year, month),
+        )
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+  }
 
   /// Gastos del mes, del más reciente al más antiguo.
   List<Expense> expensesIn(int year, int month) {

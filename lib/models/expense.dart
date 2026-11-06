@@ -7,7 +7,13 @@ class Expense {
     required this.amount,
     required this.date,
     this.registeredBy = '',
+    this.recurringExpenseId,
   });
+
+  /// Gasto fijo que lo generó automáticamente; `null` si se registró a mano.
+  final int? recurringExpenseId;
+
+  bool get isRecurring => recurringExpenseId != null;
 
   final int id;
   final String description;
@@ -34,6 +40,7 @@ class Expense {
           ? DateTime.now()
           : DateTime(parsed.year, parsed.month, parsed.day),
       registeredBy: json['registeredBy']?.toString() ?? '',
+      recurringExpenseId: (json['recurringExpenseId'] as num?)?.toInt(),
     );
   }
 }
@@ -53,13 +60,85 @@ class NewExpenseData {
   final DateTime date;
 
   Map<String, dynamic> toJson() {
-    final month = date.month.toString().padLeft(2, '0');
-    final day = date.day.toString().padLeft(2, '0');
     return {
       'description': description,
       'category': category,
       'amount': amount,
-      'date': '${date.year}-$month-$day',
+      'date': formatIsoDate(date),
+    };
+  }
+}
+
+/// "2026-11-05" (formato de fecha que espera el servidor).
+String formatIsoDate(DateTime date) {
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
+}
+
+/// Gasto fijo mensual (arriendo, nómina…): el servidor registra el gasto de
+/// cada mes cuando llega el día indicado.
+class RecurringExpense {
+  const RecurringExpense({
+    required this.id,
+    required this.description,
+    required this.category,
+    required this.amount,
+    required this.dayOfMonth,
+    this.active = true,
+  });
+
+  final int id;
+  final String description;
+  final String category;
+  final int amount;
+
+  /// Día del mes en que se registra (1 a 28).
+  final int dayOfMonth;
+
+  /// En pausa no se registran gastos nuevos.
+  final bool active;
+
+  factory RecurringExpense.fromJson(Map<String, dynamic> json) {
+    return RecurringExpense(
+      id: (json['id'] as num).toInt(),
+      description: json['description']?.toString() ?? '',
+      category: json['category']?.toString() ?? '',
+      amount: (json['amount'] as num).toInt(),
+      dayOfMonth: (json['dayOfMonth'] as num).toInt(),
+      active: json['active'] != false,
+    );
+  }
+}
+
+/// Datos para crear o editar un gasto fijo.
+class RecurringExpenseData {
+  const RecurringExpenseData({
+    required this.description,
+    required this.category,
+    required this.amount,
+    required this.dayOfMonth,
+    this.active = true,
+    this.includeCurrentMonth = true,
+  });
+
+  final String description;
+  final String category;
+  final int amount;
+  final int dayOfMonth;
+  final bool active;
+
+  /// Solo al crear: registrar también el gasto de este mes si ya pasó el día.
+  final bool includeCurrentMonth;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'description': description,
+      'category': category,
+      'amount': amount,
+      'dayOfMonth': dayOfMonth,
+      'active': active,
+      'includeCurrentMonth': includeCurrentMonth,
     };
   }
 }

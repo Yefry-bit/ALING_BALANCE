@@ -2,6 +2,7 @@ using System.Text;
 using System.Threading.RateLimiting;
 using AlingBalance.Api.Data;
 using AlingBalance.Api.Security;
+using AlingBalance.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -29,21 +30,25 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 var provider = builder.Configuration["Database:Provider"] ?? "Sqlite";
 var connectionString = builder.Configuration.GetConnectionString("Default") ?? "Data Source=alingbalance.db";
 
-builder.Services.AddDbContext<AppDbContext>(options =>
+// Cada motor tiene su propio juego de migraciones (ver Data/ProviderContexts.cs).
+if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
 {
-    if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-    {
-        options.UseSqlServer(connectionString);
-    }
-    else
-    {
-        options.UseSqlite(connectionString);
-    }
-});
+    builder.Services.AddDbContext<AppDbContext, SqlServerAppDbContext>(options =>
+        options.UseSqlServer(connectionString));
+}
+else
+{
+    builder.Services.AddDbContext<AppDbContext, SqliteAppDbContext>(options =>
+        options.UseSqlite(connectionString));
+}
 
 // ----------------------------------------------------------------- Servicios
 builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton<TokenService>();
+
+// Copia de seguridad diaria de la base SQLite (sección "Backup").
+builder.Services.AddSingleton<DatabaseBackupService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DatabaseBackupService>());
 builder.Services.AddControllers();
 
 // CORS: necesario para que la app Flutter web (Edge/Chrome) pueda llamar a la API.
@@ -96,11 +101,22 @@ builder.Services
             {
                 var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
                 var userId = context.Principal?.GetUserId() ?? 0;
-                var stillActive = await db.Users.AsNoTracking().AnyAsync(u => u.Id == userId && u.Active);
+                var account = await db.Users.AsNoTracking()
+                    .Where(u => u.Id == userId)
+                    .Select(u => new { u.Active, u.SecurityStamp })
+                    .FirstOrDefaultAsync();
 
-                if (!stillActive)
+                if (account is null || !account.Active)
                 {
                     context.Fail("La cuenta no existe o está desactivada.");
+                    return;
+                }
+
+                // Si cambió la contraseña o el rol, las sesiones anteriores se cierran.
+                var tokenStamp = context.Principal?.FindFirst(TokenService.StampClaim)?.Value ?? string.Empty;
+                if (tokenStamp != (account.SecurityStamp ?? string.Empty))
+                {
+                    context.Fail("La sesión se cerró porque cambiaron los datos de acceso.");
                 }
             },
         };
@@ -129,10 +145,9 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.EnsureCreatedAsync();
 
-    // Bases creadas con una versión anterior: agrega Clientes, Vehículos y Gastos.
-    await SchemaUpgrader.UpgradeAsync(db);
+    // Crea la base o aplica las migraciones pendientes (ver Data/DatabaseInitializer.cs).
+    await DatabaseInitializer.InitializeAsync(db);
 
     await DbSeeder.SeedAsync(
         db,

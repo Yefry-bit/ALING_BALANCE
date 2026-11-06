@@ -13,6 +13,7 @@ class AppTopBar extends StatelessWidget {
     required this.roleLabel,
     required this.onRefresh,
     required this.onLogout,
+    this.onChangePassword,
   });
 
   final String title;
@@ -20,6 +21,9 @@ class AppTopBar extends StatelessWidget {
   final String roleLabel;
   final VoidCallback onRefresh;
   final VoidCallback onLogout;
+
+  /// Abre "Cambiar contraseña" (menú de la cuenta).
+  final VoidCallback? onChangePassword;
 
   static String _greeting(DateTime now) {
     if (now.hour < 12) return 'Buenos días';
@@ -107,8 +111,40 @@ class AppTopBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
               ],
-              Tooltip(
-                message: '$userName · $roleLabel',
+              PopupMenuButton<String>(
+                tooltip: '$userName · $roleLabel',
+                position: PopupMenuPosition.under,
+                onSelected: (action) => switch (action) {
+                  'password' => onChangePassword?.call(),
+                  _ => onLogout(),
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    enabled: false,
+                    child: Text(
+                      '$userName · $roleLabel',
+                      style: const TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  if (onChangePassword != null)
+                    const PopupMenuItem(
+                      value: 'password',
+                      child: ListTile(
+                        leading: Icon(Icons.password_rounded),
+                        title: Text('Cambiar contraseña'),
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: 'logout',
+                    child: ListTile(
+                      leading: Icon(Icons.logout_rounded),
+                      title: Text('Cerrar sesión'),
+                    ),
+                  ),
+                ],
                 child: Container(
                   width: 38,
                   height: 38,

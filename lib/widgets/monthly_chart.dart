@@ -240,9 +240,14 @@ class _MonthBars extends StatelessWidget {
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final barWidth = math.min(
-                18.0,
-                math.max(6.0, constraints.maxWidth * 0.22),
+              // Dos barras (cada una con 8 px de zona de contacto) + 2 px de
+              // separación deben caber siempre, incluso en celulares angostos.
+              final barWidth = math.max(
+                1.0,
+                math.min(
+                  math.min(18.0, math.max(6.0, constraints.maxWidth * 0.22)),
+                  (constraints.maxWidth - 18) / 2,
+                ),
               );
               double height(int value) =>
                   maxValue == 0 ? 0 : constraints.maxHeight * value / maxValue;

@@ -28,4 +28,7 @@ abstract final class AppColors {
   /// Amarillo de las placas colombianas.
   static const Color plate = Color(0xFFF5C518);
   static const Color plateTaxi = Color(0xFFF4F4F1);
+
+  /// Verde de WhatsApp (botón "Avisar al cliente").
+  static const Color whatsapp = Color(0xFF25D366);
 }

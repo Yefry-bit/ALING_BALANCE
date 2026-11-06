@@ -46,3 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Copias de seguridad de la base (datos reales de clientes): no se suben.
+backend/AlingBalance.Api/backups/

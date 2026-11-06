@@ -14,5 +14,12 @@ public class AppUser
 
     public string Role { get; set; } = Roles.Employee;
     public bool Active { get; set; } = true;
+
+    /// <summary>
+    /// Código que cambia con cada cambio de contraseña o de rol. Va dentro del
+    /// token: si ya no coincide, la sesión se cierra (así una sesión guardada
+    /// en un celular no conserva una contraseña o permisos viejos).
+    /// </summary>
+    public string? SecurityStamp { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

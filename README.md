@@ -31,7 +31,9 @@ dotnet run
 
 Queda en `http://0.0.0.0:5080`. La base de datos ya viene lista en
 `backend/AlingBalance.Api/alingbalance.db` con el administrador inicial
-(`admin` / `admin123`); si falta, el servidor la crea solo. Scripts, diagrama y
+(`admin` / `admin123`); si falta, el servidor la crea solo, y al actualizar el
+proyecto aplica solo los cambios de esquema (migraciones) sin borrar datos.
+**Antes de actualizar, guarda una copia de `alingbalance.db`.** Scripts, diagrama y
 SQL Server en [`database/README.md`](database/README.md). Comprueba en
 `http://localhost:5080/health`. Detalles, endpoints y publicación en
 [`backend/README.md`](backend/README.md).
@@ -77,14 +79,73 @@ dotnet test backend/AlingBalance.Api.Tests  # servidor
 | Módulo       | Qué hace                                                              |
 |--------------|-----------------------------------------------------------------------|
 | Inicio       | Métricas (el administrador ve la ganancia del mes), accesos rápidos y últimos 5 servicios |
-| Servicios    | Registrar vehículos con empleado asignado, finalizar (con **fotos de evidencia**) / reabrir |
+| Servicios    | Registrar vehículos con empleado asignado, **cambiar el empleado**, finalizar (con **fotos de evidencia**) / reabrir y **avisar al cliente por WhatsApp** |
 | Empleados    | Registrar, activar / desactivar y ver su comisión acumulada           |
 | Clientes     | Registrar clientes con **varios vehículos cada uno**, buscar por nombre / documento / placa e historial de servicios por carro |
-| Contabilidad | **Dashboard mensual**: ingresos, gastos, comisiones y ganancia; gráfico de 6 meses; gastos por categoría; registro de gastos; comisiones por empleado |
-| Usuarios     | Crear cuentas, asignar rol y activar / desactivar (solo administrador) |
+| Contabilidad | **Dashboard mensual**: ingresos, gastos, comisiones y ganancia; gráfico de 6 meses; gastos por categoría; registrar y **editar** gastos; **gastos fijos** (arriendo, nómina…); **pago de comisiones**; **exportar a PDF / Excel** |
+| Usuarios     | Crear cuentas, **editar nombre y rol**, **asignar contraseña nueva** y activar / desactivar; **copias de seguridad** (solo administrador) |
+| Tu cuenta    | Menú del ícono de usuario (arriba a la derecha): **cambiar contraseña** y cerrar sesión |
 
 El botón **Actualizar** de la barra superior descarga los cambios que hicieron
 otros dispositivos.
+
+## Avisar al cliente por WhatsApp
+
+Cuando un servicio queda **Terminado** y la placa pertenece a un cliente con
+**celular** registrado (10 dígitos que empiezan por 3):
+
+- Al finalizar aparece **"Avisar por WhatsApp"** en el mensaje de abajo.
+- La tarjeta del servicio tiene el botón **Avisar al cliente** para hacerlo
+  después.
+
+La app abre WhatsApp con el mensaje ya escrito ("Hola Ana, le escribimos de
+AlingBalance. Su vehículo … de placa … ya está listo …"); el empleado solo
+toca **Enviar**. Sale desde el WhatsApp del celular o computador que se use,
+es gratis y no necesita cuentas ni claves. En el celular también se puede
+elegir **SMS**. En el computador abre WhatsApp Web o la app de escritorio.
+
+El nombre con el que se firma (`shopName`) y el texto están en
+`lib/core/utils/client_notifier.dart`.
+
+## Copias de seguridad
+
+El servidor guarda **una copia de la base al día** (desde las 10 p. m., o al
+arrancar si la última tiene más de un día) en
+`backend/AlingBalance.Api/backups/` y conserva las **últimas 30**. La copia se
+hace en caliente: es segura aunque estén registrando servicios.
+
+En **Usuarios → Copias de seguridad** se ve la última copia y el botón
+**Hacer copia ahora** (úsalo antes de actualizar el servidor).
+
+Para tenerlas **en la nube**, apunta la carpeta a una carpeta sincronizada de
+OneDrive o Google Drive en `appsettings.json`:
+
+```json
+"Backup": { "Enabled": true, "Folder": "C:\Users\TU_USUARIO\OneDrive\AlingBalance", "Hour": 22, "Keep": 30 }
+```
+
+**Restaurar una copia:** detén el servidor, reemplaza
+`backend/AlingBalance.Api/alingbalance.db` por la copia (renómbrala a
+`alingbalance.db`) y vuelve a iniciarlo.
+
+## Sesión guardada
+
+Al iniciar sesión, **"Mantener la sesión iniciada"** (marcado por defecto)
+guarda la sesión cifrada en el dispositivo (`flutter_secure_storage`: Keychain
+en iOS, Keystore en Android, DPAPI en Windows, almacenamiento cifrado en el
+navegador) y la app no pide la contraseña durante **30 días**. Se guarda el
+token, **nunca la contraseña**. Desmárcalo en equipos compartidos.
+
+La sesión guardada deja de servir si se cierra sesión, si vence, si se
+desactiva la cuenta o si cambian su contraseña o su rol.
+
+> En el navegador, el cifrado solo está disponible en `localhost` o con
+> `https`. Si abres la app web por la IP de la red (`http://192.168…`), la
+> sesión no se guarda y se pide la contraseña al abrirla (todo lo demás
+> funciona igual).
+>
+> Para compilar la app de **Windows** (`flutter run -d windows`), Visual Studio
+> necesita el componente **"C++ ATL"** (lo usa `flutter_secure_storage`).
 
 ## Usuarios y roles
 
@@ -97,12 +158,15 @@ administrador desde **Usuarios** y desactiva esa cuenta.
 | Ver Inicio, Servicios y Clientes          | ✅            | ✅       |
 | Registrar / editar clientes y vehículos   | ✅            | ✅       |
 | Eliminar clientes o quitarles vehículos   | ✅            | ❌       |
-| Registrar y eliminar gastos               | ✅            | ❌       |
+| Registrar, editar y eliminar gastos y gastos fijos | ✅   | ❌       |
+| Pagar comisiones y exportar el resumen    | ✅            | ❌       |
+| Cambiar el empleado de un servicio        | ✅            | ❌       |
 | Registrar servicios y finalizar / reabrir | ✅            | ✅       |
 | Cambiar el precio de un servicio          | ✅            | ❌ (precio fijo del catálogo) |
 | Ver totales de dinero y Contabilidad      | ✅            | ❌       |
 | Gestionar empleados                       | ✅            | ❌       |
-| Crear y desactivar usuarios               | ✅            | ❌       |
+| Crear, editar y desactivar usuarios       | ✅            | ❌       |
+| Cambiar su propia contraseña              | ✅            | ✅       |
 
 Los permisos se aplican **en el servidor** (la app solo oculta lo que no
 corresponde), así que un empleado no puede saltárselos. En la app están en
@@ -116,6 +180,20 @@ corresponde), así que un empleado no puede saltárselos. En la app están en
   (`WorkshopController.commissionRate`). Un servicio "En proceso" no genera
   comisión; si se reabre, la comisión se descuenta.
 - No se puede desactivar a un empleado que tiene servicios en proceso.
+- El administrador puede **cambiar el empleado** de un servicio ya registrado
+  (botón *Cambiar empleado* en la tarjeta): la comisión pasa al nuevo.
+
+### Pago de comisiones
+
+En **Contabilidad → Pago de comisiones** se ve, para el mes elegido, cuánto
+generó cada empleado, cuánto se le pagó y el botón **Pagar $…** para lo
+pendiente. El pago queda registrado (fecha, valor, quién lo registró) y sus
+servicios se marcan **"Comisión pagada"**:
+
+- Un servicio con la comisión pagada **no se puede reabrir ni cambiar de
+  empleado**.
+- **Deshacer** un pago devuelve sus servicios a pendientes.
+- El valor lo calcula el servidor (30 % de cada servicio), no la app.
 
 ## Clientes y vehículos
 
@@ -162,6 +240,26 @@ corresponde), así que un empleado no puede saltárselos. En la app están en
 
 Los servicios "En proceso" no cuentan como ingreso hasta que se terminan.
 
+### Gastos fijos
+
+**Contabilidad → Gastos fijos → Agregar**: arriendo, nómina, internet… con
+su valor y el **día del mes** (1 a 28). El servidor los registra solos cada
+mes cuando llega ese día (también los meses atrasados si nadie abrió la app),
+marcados con el ícono ↻. Se pueden **pausar** (los meses en pausa no se
+cobran), editar (aplica a los meses siguientes) o eliminar (los ya registrados
+se conservan). Cada gasto registrado se puede **editar** con el lápiz.
+
+### Exportar el resumen
+
+**Contabilidad → Exportar** descarga el resumen del mes elegido:
+
+- **PDF**: listo para imprimir o enviar (cifras del mes, últimos 6 meses,
+  comisiones pagadas / pendientes, gastos y servicios).
+- **Excel (.xlsx)**: una hoja por tema (*Resumen*, *Servicios*, *Gastos*,
+  *Comisiones*) con números de verdad para sumar o filtrar.
+
+En el navegador se descarga; en Windows y en el celular se abre "Guardar como".
+
 ## Valores fijos
 
 | Valor                                   | Dónde se cambia                                          |
@@ -206,18 +304,20 @@ lib/
 ├── main.dart, app.dart           Arranque, tema y pantalla inicial
 ├── core/
 │   ├── config/api_config.dart    Dirección del servidor (API_URL)
-│   ├── constants/                Colores y catálogo de servicios
+│   ├── constants/                Colores, catálogo de servicios y de marcas
 │   ├── navigation/app_section.dart  Las 6 secciones del menú
+│   ├── reports/                  Resumen mensual en PDF y Excel (y cómo guardarlo)
 │   ├── theme/app_theme.dart      Tema oscuro
-│   └── utils/                    validators · formatters · snackbar
+│   └── utils/                    validators · formatters · snackbar · fotos
 ├── models/                       Clases de datos (sin interfaz) y roles
 ├── data/
 │   ├── api_client.dart           Cliente HTTP: token, errores, tiempo de espera
-│   ├── auth_repository.dart      Login y usuarios
-│   └── workshop_repository.dart  Servicios y empleados
+│   ├── auth_repository.dart      Login, contraseña y usuarios
+│   ├── session_store.dart        Sesión guardada y cifrada en el dispositivo
+│   └── workshop_repository.dart  Servicios, empleados, clientes, gastos y comisiones
 ├── state/
-│   ├── auth_controller.dart      Sesión y cuentas
-│   └── workshop_controller.dart  Servicios, empleados y comisiones
+│   ├── auth_controller.dart      Sesión (guardar / recuperar) y cuentas
+│   └── workshop_controller.dart  Servicios, clientes, gastos, comisiones y resumen mensual
 ├── screens/
 │   ├── login/login_screen.dart
 │   └── dashboard/                Panel + una sección por archivo
@@ -227,6 +327,7 @@ test/                             Validadores, cliente HTTP, controladores y
                                   pantallas (con un servidor simulado en memoria)
 backend/
 ├── AlingBalance.Api/             Servidor (controladores, dominio, datos, seguridad)
+│   ├── Migrations/               Cambios de esquema (uno por motor: Sqlite y SqlServer)
 │   └── alingbalance.db           Base de datos SQLite lista para usar
 └── AlingBalance.Api.Tests/       Pruebas del servidor
 database/                         Scripts SQL (SQLite y SQL Server), datos de ejemplo,
@@ -236,15 +337,3 @@ database/                         Scripts SQL (SQLite y SQL Server), datos de ej
 Flujo: los widgets solo dibujan → los controladores guardan el estado y las
 reglas → los repositorios hablan con la API → el servidor valida y guarda en la
 base de datos.
-
-## Próximos pasos sugeridos
-
-1. Migraciones de Entity Framework (`dotnet ef migrations`) en lugar de
-   `EnsureCreated` + `SchemaUpgrader` (que hoy agrega las tablas nuevas a una
-   base existente), antes de tener datos reales en producción.
-2. Guardar la sesión de forma segura (`flutter_secure_storage`) para no pedir
-   la contraseña cada vez que se abre la app.
-3. Poder reasignar el empleado de un servicio ya registrado.
-4. Marcar comisiones como pagadas y exportar el resumen mensual (PDF / Excel).
-5. Editar un gasto ya registrado y gastos recurrentes (arriendo, nómina).
-6. Cambiar contraseña y editar el rol de un usuario existente.

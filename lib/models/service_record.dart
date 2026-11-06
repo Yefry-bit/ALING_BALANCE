@@ -16,7 +16,14 @@ class ServiceRecord {
     this.employeeName = '',
     this.photoCount = 0,
     this.finishedAt,
+    this.commissionPaymentId,
   });
+
+  /// Pago en el que se liquidó la comisión; `null` si está pendiente.
+  final int? commissionPaymentId;
+
+  /// La comisión de este servicio ya se le pagó al empleado.
+  bool get commissionPaid => commissionPaymentId != null;
 
   /// Hora en que el servicio pasó a "Terminado" (hora local); `null` si está
   /// en proceso o si se terminó antes de que existiera este dato.
@@ -58,7 +65,13 @@ class ServiceRecord {
   /// Nombre del empleado al momento de registrar el servicio.
   final String employeeName;
 
-  ServiceRecord copyWith({ServiceStatus? status, int? photoCount}) {
+  /// Copia con cambios. Para dejar la comisión pendiente usa [clearPayment].
+  ServiceRecord copyWith({
+    ServiceStatus? status,
+    int? photoCount,
+    int? commissionPaymentId,
+    bool clearPayment = false,
+  }) {
     return ServiceRecord(
       operation: operation,
       plate: plate,
@@ -73,6 +86,9 @@ class ServiceRecord {
       employeeName: employeeName,
       photoCount: photoCount ?? this.photoCount,
       finishedAt: finishedAt,
+      commissionPaymentId: clearPayment
+          ? null
+          : commissionPaymentId ?? this.commissionPaymentId,
     );
   }
 
@@ -94,6 +110,7 @@ class ServiceRecord {
       photoCount: (json['photoCount'] as num?)?.toInt() ?? 0,
       finishedAt: DateTime.tryParse(json['finishedAt']?.toString() ?? '')
           ?.toLocal(),
+      commissionPaymentId: (json['commissionPaymentId'] as num?)?.toInt(),
     );
   }
 
@@ -112,6 +129,7 @@ class ServiceRecord {
       'employeeName': employeeName,
       'photoCount': photoCount,
       'finishedAt': finishedAt?.toUtc().toIso8601String(),
+      'commissionPaymentId': commissionPaymentId,
     };
   }
 }

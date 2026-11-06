@@ -6,6 +6,7 @@ import '../core/utils/formatters.dart';
 import '../models/service_record.dart';
 import '../models/service_status.dart';
 import 'plate_badge.dart';
+import 'service_actions.dart';
 import 'status_tag.dart';
 
 /// Tarjeta que resume una operación de servicio.
@@ -30,6 +31,13 @@ class ServiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final inProgress = service.status == ServiceStatus.inProgress;
+    final actions = ServiceActions.maybeOf(context);
+    final changeEmployee = actions?.onChangeEmployee;
+    final notifyClient = actions?.onNotifyClient;
+    final canNotify =
+        notifyClient != null &&
+        !inProgress &&
+        (actions?.canNotifyClient?.call(service) ?? false);
     final statusColor = inProgress ? AppColors.warning : AppColors.accent;
     const small = TextStyle(color: AppColors.secondaryText, fontSize: 12);
 
@@ -123,6 +131,11 @@ class ServiceCard extends StatelessWidget {
                               Icons.edit_note_rounded,
                               'Registró: ${service.registeredBy}',
                             ),
+                          if (service.commissionPaid)
+                            const _Info(
+                              Icons.payments_outlined,
+                              'Comisión pagada',
+                            ),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -134,6 +147,31 @@ class ServiceCard extends StatelessWidget {
                         spacing: 8,
                         runSpacing: 4,
                         children: [
+                          if (changeEmployee != null && !service.commissionPaid)
+                            TextButton.icon(
+                              onPressed: () => changeEmployee(service),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.secondaryText,
+                              ),
+                              icon: const Icon(
+                                Icons.swap_horiz_rounded,
+                                size: 18,
+                              ),
+                              label: Text(
+                                service.employeeId == null
+                                    ? 'Asignar empleado'
+                                    : 'Cambiar empleado',
+                              ),
+                            ),
+                          if (canNotify)
+                            TextButton.icon(
+                              onPressed: () => notifyClient(service),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.whatsapp,
+                              ),
+                              icon: const Icon(Icons.chat_outlined, size: 18),
+                              label: const Text('Avisar al cliente'),
+                            ),
                           if (onPhotos != null)
                             TextButton.icon(
                               onPressed: onPhotos,
@@ -286,9 +324,16 @@ class _TimePill extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: color),
           const SizedBox(width: 6),
-          Text(
-            '$label ',
-            style: const TextStyle(color: AppColors.mutedText, fontSize: 11.5),
+          Flexible(
+            child: Text(
+              '$label ',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.mutedText,
+                fontSize: 11.5,
+              ),
+            ),
           ),
           Flexible(
             child: Text(

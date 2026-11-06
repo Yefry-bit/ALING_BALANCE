@@ -34,6 +34,9 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _hidePassword = true;
   bool _signingIn = false;
 
+  /// "Mantener la sesión iniciada" (marcado por defecto).
+  bool _remember = true;
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final error = await widget.auth.login(
       _userController.text,
       _passwordController.text,
+      remember: _remember,
     );
     if (!mounted) return;
 
@@ -193,7 +197,56 @@ class _LoginScreenState extends State<LoginScreen> {
                   ? 'Ingresa tu contraseña.'
                   : null,
             ),
-            const SizedBox(height: 26),
+            if (widget.auth.canRememberSession) ...[
+              const SizedBox(height: 8),
+              // Fila simple (no ListTile): mide bien su alto dentro del
+              // IntrinsicHeight de la pantalla ancha.
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: _signingIn
+                    ? null
+                    : () => setState(() => _remember = !_remember),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Checkbox(
+                        value: _remember,
+                        onChanged: _signingIn
+                            ? null
+                            : (value) =>
+                                  setState(() => _remember = value ?? true),
+                      ),
+                      const SizedBox(width: 4),
+                      const Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(top: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Mantener la sesión iniciada'),
+                              SizedBox(height: 2),
+                              Text(
+                                'No pedirá la contraseña en este dispositivo '
+                                'durante 30 días. Desmárcalo en equipos '
+                                'compartidos.',
+                                style: TextStyle(
+                                  color: AppColors.mutedText,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ] else
+              const SizedBox(height: 26),
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: AppDecorations.brandGradient,

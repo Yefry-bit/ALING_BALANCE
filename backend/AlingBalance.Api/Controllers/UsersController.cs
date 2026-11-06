@@ -72,6 +72,88 @@ public class UsersController(AppDbContext db, PasswordService passwords) : ApiCo
         return Created($"/api/users/{user.Id}", UserDto.From(user));
     }
 
+    /// <summary>Edita el nombre y el rol de una cuenta.</summary>
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> Update(int id, UpdateUserRequest request)
+    {
+        var errors = new ErrorBag();
+        var name = Rules.NormalizeText(request.Name);
+        var role = (request.Role ?? string.Empty).Trim().ToLowerInvariant();
+
+        errors.Add("name", Rules.CheckName(name));
+        if (!Roles.All.Contains(role))
+        {
+            errors.Add("role", "El rol debe ser administrador o empleado.");
+        }
+
+        if (errors.HasErrors) return Invalid(errors);
+
+        var user = await db.Users.FindAsync(id);
+        if (user is null)
+        {
+            return Fail(StatusCodes.Status404NotFound, "No se encontró el usuario.");
+        }
+
+        if (user.Role != role)
+        {
+            if (user.Id == User.GetUserId())
+            {
+                return Fail(
+                    StatusCodes.Status400BadRequest,
+                    "No puedes cambiar tu propio rol. Pídeselo a otro administrador.");
+            }
+
+            if (user.Role == Roles.Admin && user.Active
+                && await db.Users.CountAsync(u => u.Active && u.Role == Roles.Admin) <= 1)
+            {
+                return Fail(
+                    StatusCodes.Status409Conflict,
+                    "Debe quedar al menos un administrador activo.");
+            }
+
+            user.Role = role;
+
+            // Sus sesiones abiertas se cierran para que tome los permisos nuevos.
+            user.SecurityStamp = TokenService.NewStamp();
+        }
+
+        user.Name = name;
+        await db.SaveChangesAsync();
+
+        return Ok(UserDto.From(user));
+    }
+
+    /// <summary>
+    /// Asigna una contraseña nueva a otra cuenta (por ejemplo, si el empleado
+    /// la olvidó). Sus sesiones abiertas se cierran.
+    /// </summary>
+    [HttpPatch("{id:int}/password")]
+    public async Task<IActionResult> ResetPassword(int id, ResetPasswordRequest request)
+    {
+        var errors = new ErrorBag();
+        errors.Add("password", Rules.CheckPassword(request.Password));
+        if (errors.HasErrors) return Invalid(errors);
+
+        if (id == User.GetUserId())
+        {
+            return Fail(
+                StatusCodes.Status400BadRequest,
+                "Para tu propia cuenta usa «Cambiar contraseña».");
+        }
+
+        var user = await db.Users.FindAsync(id);
+        if (user is null)
+        {
+            return Fail(StatusCodes.Status404NotFound, "No se encontró el usuario.");
+        }
+
+        user.PasswordHash = passwords.Hash(request.Password!);
+        user.SecurityStamp = TokenService.NewStamp();
+        await db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
     [HttpPatch("{id:int}/active")]
     public async Task<IActionResult> SetActive(int id, SetActiveRequest request)
     {

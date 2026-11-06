@@ -10,6 +10,12 @@ public static class ClaimsExtensions
         return int.TryParse(user.FindFirstValue("sub"), out var id) ? id : 0;
     }
 
+    /// <summary>La sesión se inició con "Mantener la sesión iniciada".</summary>
+    public static bool IsRememberedSession(this ClaimsPrincipal user)
+    {
+        return user.FindFirstValue(TokenService.RememberClaim) == "true";
+    }
+
     public static string GetUserName(this ClaimsPrincipal user)
     {
         return user.FindFirstValue("name") ?? string.Empty;

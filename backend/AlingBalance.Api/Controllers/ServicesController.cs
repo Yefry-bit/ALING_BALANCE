@@ -155,6 +155,14 @@ public class ServicesController(AppDbContext db) : ApiControllerBase
             return Ok(ServiceDto.From(service));
         }
 
+        if (status == ServiceStatuses.InProgress && service.CommissionPaymentId is not null)
+        {
+            return Fail(
+                StatusCodes.Status409Conflict,
+                "No se puede reabrir: la comisión de este servicio ya se pagó. " +
+                "Deshaz el pago en Contabilidad si necesitas reabrirlo.");
+        }
+
         if (status == ServiceStatuses.InProgress
             && await HasInProgressDuplicate(service.Plate, service.ServiceType, operation))
         {
@@ -167,6 +175,58 @@ public class ServicesController(AppDbContext db) : ApiControllerBase
         service.Status = status;
         service.FinishedAt = status == ServiceStatuses.Finished ? DateTime.UtcNow : null;
         await db.SaveChangesAsync();
+
+        var photos = await db.ServicePhotos.CountAsync(p => p.ServiceOperation == operation);
+        return Ok(ServiceDto.From(service, photos));
+    }
+
+    /// <summary>
+    /// Cambia el empleado que realiza el servicio (solo administradores).
+    /// La comisión pasa al nuevo empleado; no se permite si ya se pagó.
+    /// </summary>
+    [HttpPatch("{operation:int}/employee")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<IActionResult> AssignEmployee(int operation, AssignEmployeeRequest request)
+    {
+        var errors = new ErrorBag();
+
+        if (request.EmployeeId is not int employeeId)
+        {
+            errors.Add("employeeId", "Selecciona el empleado que realiza el servicio.");
+            return Invalid(errors);
+        }
+
+        var service = await db.Services.FindAsync(operation);
+        if (service is null)
+        {
+            return Fail(StatusCodes.Status404NotFound, "No se encontró el servicio.");
+        }
+
+        var employee = await db.Employees.FindAsync(employeeId);
+        if (employee is null)
+        {
+            errors.Add("employeeId", "El empleado seleccionado no existe.");
+        }
+        else if (!employee.Active)
+        {
+            errors.Add("employeeId", "El empleado seleccionado está inactivo.");
+        }
+
+        if (errors.HasErrors) return Invalid(errors);
+
+        if (service.EmployeeId != employeeId)
+        {
+            if (service.CommissionPaymentId is not null)
+            {
+                return Fail(
+                    StatusCodes.Status409Conflict,
+                    "No se puede cambiar el empleado: la comisión de este servicio ya se pagó.");
+            }
+
+            service.EmployeeId = employee!.Id;
+            service.EmployeeName = employee.Name;
+            await db.SaveChangesAsync();
+        }
 
         var photos = await db.ServicePhotos.CountAsync(p => p.ServiceOperation == operation);
         return Ok(ServiceDto.From(service, photos));

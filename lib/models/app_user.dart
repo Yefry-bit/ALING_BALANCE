@@ -27,6 +27,26 @@ class AppUser {
       active: json['active'] != false,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'username': username,
+      'role': role.id,
+      'active': active,
+    };
+  }
+
+  AppUser copyWith({String? name, UserRole? role}) {
+    return AppUser(
+      id: id,
+      name: name ?? this.name,
+      username: username,
+      role: role ?? this.role,
+      active: active,
+    );
+  }
 }
 
 /// Datos que escribe el administrador al crear un usuario.

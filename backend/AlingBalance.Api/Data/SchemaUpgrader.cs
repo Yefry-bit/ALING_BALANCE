@@ -3,14 +3,14 @@ using Microsoft.EntityFrameworkCore;
 namespace AlingBalance.Api.Data;
 
 /// <summary>
-/// Agrega a una base de datos existente las tablas que se crearon después
-/// de la primera versión (Clientes, Vehículos, Gastos, Fotos de servicios y
-/// la hora de finalización de cada servicio).
+/// Puente para bases creadas <b>antes de usar migraciones</b> (con
+/// <c>EnsureCreated</c>): les agrega lo que se creó después de la primera
+/// versión (Clientes, Vehículos, Gastos, Fotos y la hora de finalización)
+/// para que queden iguales a la migración <c>InitialCreate</c>.
 ///
-/// <c>EnsureCreated</c> solo crea el esquema cuando la base no existe; si ya
-/// existe (por ejemplo, la <c>alingbalance.db</c> que viene con el proyecto)
-/// no agrega tablas nuevas. Este paso se puede ejecutar siempre: solo crea lo
-/// que falta. El esquema es el mismo que genera Entity Framework.
+/// Solo lo usa <see cref="DatabaseInitializer"/> una vez por base; después,
+/// los cambios de esquema se hacen con migraciones (carpeta Migrations).
+/// No agregues aquí cambios nuevos: crea una migración.
 /// </summary>
 public static class SchemaUpgrader
 {

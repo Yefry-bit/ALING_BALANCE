@@ -34,4 +34,8 @@ public class ServiceRecord
 
     /// <summary>Nombre del empleado al momento de registrar el servicio.</summary>
     public string EmployeeName { get; set; } = string.Empty;
+
+    /// <summary>Pago en el que se liquidó la comisión; null si está pendiente.</summary>
+    public int? CommissionPaymentId { get; set; }
+    public CommissionPayment? CommissionPayment { get; set; }
 }

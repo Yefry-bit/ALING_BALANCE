@@ -40,6 +40,10 @@ class ApiClient {
     return _asList(data);
   }
 
+  Future<Map<String, dynamic>> getObject(String path) async {
+    return _asObject(await _send('GET', path));
+  }
+
   Future<Map<String, dynamic>> postObject(
     String path,
     Map<String, dynamic> body,
@@ -52,6 +56,11 @@ class ApiClient {
     Map<String, dynamic> body,
   ) async {
     return _asObject(await _send('PATCH', path, body: body));
+  }
+
+  /// PATCH cuando el servidor no devuelve nada (204 sin contenido).
+  Future<void> patch(String path, Map<String, dynamic> body) async {
+    await _send('PATCH', path, body: body);
   }
 
   Future<Map<String, dynamic>> putObject(

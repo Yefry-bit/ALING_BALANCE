@@ -8,7 +8,7 @@ namespace AlingBalance.Api.Data;
 /// longitudes y CHECK) se definen aquí, así la base protege los datos aunque
 /// falle alguna validación de la API.
 /// </summary>
-public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public class AppDbContext(DbContextOptions options) : DbContext(options)
 {
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<Employee> Employees => Set<Employee>();
@@ -17,6 +17,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
     public DbSet<Expense> Expenses => Set<Expense>();
     public DbSet<ServicePhoto> ServicePhotos => Set<ServicePhoto>();
+    public DbSet<CommissionPayment> CommissionPayments => Set<CommissionPayment>();
+    public DbSet<RecurringExpense> RecurringExpenses => Set<RecurringExpense>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -30,6 +32,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(u => u.Username).HasMaxLength(20).IsRequired();
             entity.Property(u => u.PasswordHash).HasMaxLength(200).IsRequired();
             entity.Property(u => u.Role).HasMaxLength(20).IsRequired();
+            entity.Property(u => u.SecurityStamp).HasMaxLength(40);
             entity.HasIndex(u => u.Username).IsUnique();
         });
 
@@ -69,6 +72,31 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
             entity.HasIndex(s => s.Plate);
             entity.HasIndex(s => s.Status);
+
+            // Al deshacer un pago, sus servicios vuelven a quedar pendientes.
+            entity.HasOne(s => s.CommissionPayment)
+                .WithMany(p => p.Services)
+                .HasForeignKey(s => s.CommissionPaymentId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<CommissionPayment>(entity =>
+        {
+            entity.ToTable("CommissionPayments", table =>
+            {
+                table.HasCheckConstraint("CK_CommissionPayments_Amount", "[Amount] >= 0");
+                table.HasCheckConstraint("CK_CommissionPayments_Month", "[Month] BETWEEN 1 AND 12");
+            });
+
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.EmployeeName).HasMaxLength(80).IsRequired();
+            entity.Property(p => p.PaidBy).HasMaxLength(80).IsRequired();
+            entity.HasIndex(p => new { p.Year, p.Month });
+
+            entity.HasOne(p => p.Employee)
+                .WithMany()
+                .HasForeignKey(p => p.EmployeeId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<Client>(entity =>
@@ -111,6 +139,31 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(e => e.Category).HasMaxLength(40).IsRequired();
             entity.Property(e => e.RegisteredBy).HasMaxLength(80).IsRequired();
             entity.HasIndex(e => e.Date);
+
+            // Un solo gasto generado por gasto fijo y fecha.
+            entity.HasIndex(e => new { e.RecurringExpenseId, e.Date })
+                .IsUnique()
+                .HasFilter("[RecurringExpenseId] IS NOT NULL");
+
+            // Si se elimina el gasto fijo, los gastos ya generados se conservan.
+            entity.HasOne(e => e.RecurringExpense)
+                .WithMany()
+                .HasForeignKey(e => e.RecurringExpenseId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<RecurringExpense>(entity =>
+        {
+            entity.ToTable("RecurringExpenses", table =>
+            {
+                table.HasCheckConstraint("CK_RecurringExpenses_Amount", "[Amount] > 0");
+                table.HasCheckConstraint("CK_RecurringExpenses_Day", "[DayOfMonth] BETWEEN 1 AND 28");
+            });
+
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Description).HasMaxLength(80).IsRequired();
+            entity.Property(r => r.Category).HasMaxLength(40).IsRequired();
+            entity.Property(r => r.RegisteredBy).HasMaxLength(80).IsRequired();
         });
 
         modelBuilder.Entity<ServicePhoto>(entity =>

@@ -2,26 +2,36 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/navigation/app_section.dart';
+import '../../core/reports/monthly_report.dart';
+import '../../core/reports/report_excel.dart';
+import '../../core/reports/report_pdf.dart';
+import '../../core/reports/report_saver.dart';
+import '../../core/utils/client_notifier.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/photo_picker.dart';
 import '../../core/utils/snackbar.dart';
 import '../../data/workshop_repository.dart';
 import '../../models/app_user.dart';
 import '../../models/client.dart';
+import '../../models/commission_payment.dart';
 import '../../models/employee.dart';
 import '../../models/expense.dart';
 import '../../models/service_record.dart';
 import '../../models/service_status.dart';
 import '../../state/auth_controller.dart';
 import '../../state/workshop_controller.dart';
+import '../../widgets/account_dialogs.dart';
 import '../../widgets/app_background.dart';
 import '../../widgets/app_sidebar.dart';
 import '../../widgets/app_top_bar.dart';
+import '../../widgets/assign_employee_dialog.dart';
 import '../../widgets/client_form_dialog.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/employee_form_dialog.dart';
 import '../../widgets/expense_form_dialog.dart';
 import '../../widgets/finish_service_dialog.dart';
+import '../../widgets/recurring_expense_form_dialog.dart';
+import '../../widgets/service_actions.dart';
 import '../../widgets/service_form_dialog.dart';
 import '../../widgets/service_photos_dialog.dart';
 import '../../widgets/user_form_dialog.dart';
@@ -45,10 +55,18 @@ class DashboardScreen extends StatefulWidget {
     required this.auth,
     this.controller,
     this.photoPicker = const PhotoPicker(),
+    this.reportSaver = const ReportSaver(),
+    this.messageLauncher = const MessageLauncher(),
   });
+
+  /// Abre WhatsApp / SMS para avisar al cliente (se reemplaza en pruebas).
+  final MessageLauncher messageLauncher;
 
   /// Cámara / galería (se puede reemplazar en pruebas).
   final PhotoPicker photoPicker;
+
+  /// Guarda los informes exportados (se puede reemplazar en pruebas).
+  final ReportSaver reportSaver;
 
   /// Controlador de sesión con el usuario ya autenticado.
   final AuthController auth;
@@ -180,12 +198,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (finished != true || !mounted) return;
-    showMessage(
-      context,
-      uploaded == 0
-          ? 'Servicio #${service.operation} terminado.'
-          : 'Servicio #${service.operation} terminado con $uploaded foto(s).',
+    final text = uploaded == 0
+        ? 'Servicio #${service.operation} terminado.'
+        : 'Servicio #${service.operation} terminado con $uploaded foto(s).';
+
+    // Si el carro tiene un cliente con celular, se ofrece avisarle ya.
+    if (!_canNotifyClient(service)) {
+      showMessage(context, text);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: 'Avisar por WhatsApp',
+          onPressed: () => _notifyClient(service),
+        ),
+      ),
     );
+  }
+
+  // ------------------------------------------------------- Avisar al cliente
+
+  /// Celular (con indicativo) del dueño del carro, si tiene WhatsApp.
+  String? _clientNumber(ServiceRecord service) {
+    final client = _controller.clientForPlate(service.plate);
+    return client == null ? null : whatsappNumber(client.phone);
+  }
+
+  bool _canNotifyClient(ServiceRecord service) =>
+      _clientNumber(service) != null;
+
+  /// Abre WhatsApp (o SMS en el celular) con el aviso de "vehículo listo"
+  /// ya escrito; el empleado solo toca Enviar.
+  Future<void> _notifyClient(ServiceRecord service) async {
+    final client = _controller.clientForPlate(service.plate);
+    final number = _clientNumber(service);
+    if (client == null || number == null) {
+      showMessage(
+        context,
+        'El vehículo ${service.plate} no tiene un cliente con celular '
+        'registrado. Agrégalo en Clientes.',
+      );
+      return;
+    }
+
+    final message = readyMessage(clientName: client.name, service: service);
+    var uri = whatsappUri(number, message);
+
+    if (canSendSms) {
+      final choice = await showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.chat, color: AppColors.whatsapp),
+                title: const Text('WhatsApp'),
+                subtitle: Text('Avisar a ${client.name}'),
+                onTap: () => Navigator.pop(context, 'whatsapp'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.sms_outlined),
+                title: const Text('Mensaje de texto (SMS)'),
+                onTap: () => Navigator.pop(context, 'sms'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (choice == null || !mounted) return;
+      if (choice == 'sms') uri = smsUri(number, message);
+    }
+
+    final opened = await widget.messageLauncher.open(uri);
+    if (!opened && mounted) {
+      showMessage(context, 'No se pudo abrir WhatsApp en este dispositivo.');
+    }
   }
 
   Future<void> _openPhotos(ServiceRecord service) async {
@@ -331,6 +423,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     showMessage(context, 'Gasto registrado.');
   }
 
+  Future<void> _editExpense(Expense expense) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ExpenseFormDialog(
+        initial: expense,
+        onSubmit: (data) => _controller.updateExpense(expense.id, data),
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+    showMessage(context, 'Gasto actualizado.');
+  }
+
   Future<void> _deleteExpense(Expense expense) async {
     final confirmed = await confirmAction(
       context,
@@ -345,6 +451,207 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final error = await _controller.deleteExpense(expense.id);
     if (!mounted) return;
     showMessage(context, error ?? 'Gasto eliminado.');
+  }
+
+  // ------------------------------------------------------------ Gastos fijos
+
+  Future<void> _newRecurring() async {
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          RecurringExpenseFormDialog(onSubmit: _controller.addRecurringExpense),
+    );
+
+    if (saved != true || !mounted) return;
+    showMessage(context, 'Gasto fijo creado. Se registrará solo cada mes.');
+  }
+
+  Future<void> _editRecurring(RecurringExpense item) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => RecurringExpenseFormDialog(
+        initial: item,
+        onSubmit: (data) => _controller.updateRecurringExpense(item.id, data),
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+    showMessage(context, 'Gasto fijo actualizado.');
+  }
+
+  Future<void> _toggleRecurring(RecurringExpense item) async {
+    final error = await _controller.toggleRecurringExpense(item);
+    if (!mounted) return;
+    showMessage(
+      context,
+      error ??
+          (item.active
+              ? '"${item.description}" quedó en pausa.'
+              : '"${item.description}" se volverá a registrar cada mes.'),
+    );
+  }
+
+  Future<void> _deleteRecurring(RecurringExpense item) async {
+    final confirmed = await confirmAction(
+      context,
+      title: 'Eliminar gasto fijo',
+      message:
+          '"${item.description}" dejará de registrarse cada mes. Los gastos '
+          'que ya se registraron se conservan.',
+      confirmLabel: 'Eliminar',
+    );
+    if (!confirmed || !mounted) return;
+
+    final error = await _controller.deleteRecurringExpense(item.id);
+    if (!mounted) return;
+    showMessage(context, error ?? 'Gasto fijo eliminado.');
+  }
+
+  // -------------------------------------------------------------- Comisiones
+
+  Future<void> _payCommissions(
+    MonthlyCommission item,
+    int year,
+    int month,
+  ) async {
+    final confirmed = await confirmAction(
+      context,
+      title: 'Pagar comisiones',
+      message:
+          '¿Registrar el pago de ${formatMoney(item.pendingAmount)} a '
+          '${item.employeeName} por ${item.pendingOperations.length} '
+          'servicio(s) de ${formatMonth(year, month)}?',
+      confirmLabel: 'Registrar pago',
+    );
+    if (!confirmed || !mounted) return;
+
+    final error = await _controller.payCommissions(
+      item.employeeId,
+      year,
+      month,
+    );
+    if (!mounted) return;
+    showMessage(
+      context,
+      error ?? 'Pago registrado: ${formatMoney(item.pendingAmount)}.',
+    );
+  }
+
+  Future<void> _undoPayment(CommissionPayment payment) async {
+    final confirmed = await confirmAction(
+      context,
+      title: 'Deshacer pago',
+      message:
+          'El pago de ${formatMoney(payment.amount)} a ${payment.employeeName} '
+          'se eliminará y sus servicios volverán a quedar pendientes.',
+      confirmLabel: 'Deshacer pago',
+    );
+    if (!confirmed || !mounted) return;
+
+    final error = await _controller.undoCommissionPayment(payment.id);
+    if (!mounted) return;
+    showMessage(context, error ?? 'Pago deshecho.');
+  }
+
+  /// Cambia el empleado de un servicio (solo administradores).
+  Future<void> _changeEmployee(ServiceRecord service) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AssignEmployeeDialog(
+        service: service,
+        employees: _controller.employees.where((e) => e.active).toList(),
+        commission: _controller.commissionFor(service),
+        onSubmit: (employeeId) =>
+            _controller.assignEmployee(service.operation, employeeId),
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+    showMessage(
+      context,
+      'Empleado del servicio #${service.operation} actualizado.',
+    );
+  }
+
+  // ---------------------------------------------------------------- Informes
+
+  Future<void> _export(int year, int month, ReportFormat format) async {
+    final report = MonthlyReport.fromController(_controller, year, month);
+
+    try {
+      final bytes = switch (format) {
+        ReportFormat.pdf => await buildMonthlyReportPdf(report),
+        ReportFormat.excel => buildMonthlyReportExcel(report),
+      };
+      final saved = await widget.reportSaver.save(
+        name: report.fileName,
+        bytes: bytes,
+        format: format,
+      );
+      if (!mounted || !saved) return;
+      showMessage(
+        context,
+        'Resumen de ${report.monthName} exportado en ${format.label}.',
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showMessage(
+        context,
+        'No se pudo exportar el resumen. Inténtalo de nuevo.',
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------- Usuarios
+
+  Future<void> _changePassword() async {
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          ChangePasswordDialog(onSubmit: widget.auth.changePassword),
+    );
+
+    if (saved != true || !mounted) return;
+    showMessage(context, 'Contraseña actualizada.');
+  }
+
+  Future<void> _editUser(AppUser user) async {
+    final isSelf = user.id == widget.auth.currentUser?.id;
+    final lastAdmin = widget.auth.isLastActiveAdmin(user);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => EditUserDialog(
+        user: user,
+        canChangeRole: !isSelf && !lastAdmin,
+        roleLockedReason: isSelf
+            ? 'No puedes cambiar tu propio rol.'
+            : 'Es el único administrador activo: debe quedar al menos uno.',
+        onSubmit: (name, role) => widget.auth.updateUser(user.id, name, role),
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+    showMessage(context, 'Usuario actualizado.');
+  }
+
+  Future<void> _resetPassword(AppUser user) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ResetPasswordDialog(
+        user: user,
+        onSubmit: (password) => widget.auth.resetPassword(user.id, password),
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+    showMessage(context, 'Contraseña de ${user.name} actualizada.');
   }
 
   // ---------------------------------------------------------------- Usuarios
@@ -459,11 +766,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             roleLabel: user.role.label,
                             onRefresh: _refresh,
                             onLogout: _logout,
+                            onChangePassword: _changePassword,
                           ),
                           Expanded(
-                            child: SingleChildScrollView(
-                              padding: EdgeInsets.all(isDesktop ? 30 : 18),
-                              child: _buildSection(user, isDesktop),
+                            child: ServiceActions(
+                              onChangeEmployee: user.role.canManageEmployees
+                                  ? _changeEmployee
+                                  : null,
+                              onNotifyClient: _notifyClient,
+                              canNotifyClient: _canNotifyClient,
+                              child: SingleChildScrollView(
+                                padding: EdgeInsets.all(isDesktop ? 30 : 18),
+                                child: _buildSection(user, isDesktop),
+                              ),
                             ),
                           ),
                         ],
@@ -536,12 +851,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
           isDesktop: isDesktop,
           onNewExpense: _newExpense,
           onDeleteExpense: _deleteExpense,
+          onEditExpense: _editExpense,
+          onNewRecurring: _newRecurring,
+          onEditRecurring: _editRecurring,
+          onToggleRecurring: _toggleRecurring,
+          onDeleteRecurring: _deleteRecurring,
+          onPayCommissions: _payCommissions,
+          onUndoPayment: _undoPayment,
+          onExport: _export,
         );
       case AppSection.usuarios:
         return UsersSection(
           auth: widget.auth,
           onNewUser: _newUser,
           onToggleActive: _toggleUserActive,
+          onEdit: _editUser,
+          onResetPassword: _resetPassword,
         );
     }
   }

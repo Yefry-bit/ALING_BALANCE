@@ -1,21 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/constants/app_colors.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/validators.dart';
 import '../models/expense.dart';
 import 'form_error_banner.dart';
 
-/// Diálogo para registrar un gasto. Devuelve `true` si se guardó.
+/// Diálogo para registrar un gasto o corregir uno ya registrado ([initial]).
+/// Devuelve `true` si se guardó.
 class ExpenseFormDialog extends StatefulWidget {
   const ExpenseFormDialog({
     super.key,
     required this.onSubmit,
     this.initialDate,
+    this.initial,
   });
 
   /// Fecha propuesta (por ejemplo, un día del mes que se está viendo).
   final DateTime? initialDate;
+
+  /// Gasto a editar; `null` para registrar uno nuevo.
+  final Expense? initial;
 
   /// Envía el gasto al servidor. Devuelve un mensaje de error o `null`.
   final Future<String?> Function(NewExpenseData data) onSubmit;
@@ -34,10 +40,24 @@ class _ExpenseFormDialogState extends State<ExpenseFormDialog> {
   bool _saving = false;
   String? _error;
 
+  bool get _editing => widget.initial != null;
+
   @override
   void initState() {
     super.initState();
     final today = DateUtils.dateOnly(DateTime.now());
+    final expense = widget.initial;
+
+    if (expense != null) {
+      _descriptionController.text = expense.description;
+      _amountController.text = expense.amount.toString();
+      if (ExpenseCategories.all.contains(expense.category)) {
+        _category = expense.category;
+      }
+      _date = expense.date.isAfter(today) ? today : expense.date;
+      return;
+    }
+
     final initial = widget.initialDate;
     _date = initial == null || initial.isAfter(today)
         ? today
@@ -96,7 +116,8 @@ class _ExpenseFormDialogState extends State<ExpenseFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Registrar gasto'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      title: Text(_editing ? 'Editar gasto' : 'Registrar gasto'),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
@@ -106,6 +127,30 @@ class _ExpenseFormDialogState extends State<ExpenseFormDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (_error != null) FormErrorBanner(message: _error!),
+                if (widget.initial?.isRecurring ?? false)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.autorenew_rounded,
+                          size: 16,
+                          color: AppColors.info,
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Lo registró un gasto fijo. El cambio aplica solo '
+                            'a este mes.',
+                            style: TextStyle(
+                              color: AppColors.secondaryText,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 TextFormField(
                   controller: _descriptionController,
                   enabled: !_saving,
@@ -176,7 +221,13 @@ class _ExpenseFormDialogState extends State<ExpenseFormDialog> {
         ),
         ElevatedButton(
           onPressed: _saving ? null : _save,
-          child: Text(_saving ? 'Guardando…' : 'Guardar gasto'),
+          child: Text(
+            _saving
+                ? 'Guardando…'
+                : _editing
+                ? 'Guardar cambios'
+                : 'Guardar gasto',
+          ),
         ),
       ],
     );

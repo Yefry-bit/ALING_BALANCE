@@ -12,6 +12,8 @@ class UserCard extends StatelessWidget {
     required this.user,
     required this.isCurrentUser,
     required this.onToggleActive,
+    this.onEdit,
+    this.onResetPassword,
   });
 
   final AppUser user;
@@ -19,6 +21,12 @@ class UserCard extends StatelessWidget {
   /// `true` si es la cuenta con la que se inició sesión.
   final bool isCurrentUser;
   final VoidCallback onToggleActive;
+
+  /// Editar nombre y rol.
+  final VoidCallback? onEdit;
+
+  /// Asignar una contraseña nueva (no aplica a la cuenta propia).
+  final VoidCallback? onResetPassword;
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +84,26 @@ class UserCard extends StatelessWidget {
               ],
             ),
           ),
+          if (onEdit != null)
+            IconButton(
+              tooltip: 'Editar nombre y rol',
+              onPressed: onEdit,
+              icon: const Icon(
+                Icons.edit_outlined,
+                color: AppColors.secondaryText,
+              ),
+            ),
+          if (onResetPassword != null)
+            IconButton(
+              tooltip: isCurrentUser
+                  ? 'Para tu cuenta usa «Cambiar contraseña» (arriba)'
+                  : 'Asignar contraseña nueva',
+              onPressed: isCurrentUser ? null : onResetPassword,
+              icon: const Icon(
+                Icons.lock_reset_rounded,
+                color: AppColors.secondaryText,
+              ),
+            ),
           IconButton(
             tooltip: isCurrentUser
                 ? 'No puedes desactivar tu propia cuenta'

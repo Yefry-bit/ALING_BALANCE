@@ -229,6 +229,15 @@ public static class Rules
     /// La fecha es obligatoria, no puede ser futura (se admite un día de
     /// margen por la diferencia horaria) ni anterior al año 2000.
     /// </summary>
+    /// <summary>Día de un gasto fijo: 1 a 28 (así existe en todos los meses).</summary>
+    public static string? CheckRecurringDay(int? day)
+    {
+        if (day is null) return "Indica el día del mes.";
+        if (day < 1 || day > 28) return "El día debe estar entre 1 y 28.";
+
+        return null;
+    }
+
     public static string? CheckExpenseDate(DateOnly? date, DateOnly today)
     {
         if (date is null) return "Ingresa la fecha del gasto.";

@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/navigation/app_section.dart';
 import '../../../models/app_user.dart';
 import '../../../state/auth_controller.dart';
+import '../../../widgets/backup_panel.dart';
 import '../../../widgets/section_header.dart';
 import '../../../widgets/user_card.dart';
 
@@ -14,11 +15,15 @@ class UsersSection extends StatelessWidget {
     required this.auth,
     required this.onNewUser,
     required this.onToggleActive,
+    required this.onEdit,
+    required this.onResetPassword,
   });
 
   final AuthController auth;
   final VoidCallback onNewUser;
   final ValueChanged<AppUser> onToggleActive;
+  final ValueChanged<AppUser> onEdit;
+  final ValueChanged<AppUser> onResetPassword;
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +62,10 @@ class UsersSection extends StatelessWidget {
             user: user,
             isCurrentUser: user.id == auth.currentUser?.id,
             onToggleActive: () => onToggleActive(user),
+            onEdit: () => onEdit(user),
+            onResetPassword: () => onResetPassword(user),
           ),
+        BackupPanel(api: auth.api),
       ],
     );
   }

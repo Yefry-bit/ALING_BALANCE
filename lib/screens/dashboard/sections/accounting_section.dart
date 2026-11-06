@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/navigation/app_section.dart';
+import '../../../core/reports/report_saver.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../models/commission_payment.dart';
 import '../../../models/employee_commission.dart';
 import '../../../models/expense.dart';
 import '../../../models/monthly_summary.dart';
@@ -24,6 +26,14 @@ class AccountingSection extends StatefulWidget {
     required this.isDesktop,
     required this.onNewExpense,
     required this.onDeleteExpense,
+    required this.onEditExpense,
+    required this.onNewRecurring,
+    required this.onEditRecurring,
+    required this.onToggleRecurring,
+    required this.onDeleteRecurring,
+    required this.onPayCommissions,
+    required this.onUndoPayment,
+    required this.onExport,
     this.now,
   });
 
@@ -33,6 +43,21 @@ class AccountingSection extends StatefulWidget {
   /// Abre el formulario de gasto proponiendo una fecha del mes visible.
   final ValueChanged<DateTime> onNewExpense;
   final ValueChanged<Expense> onDeleteExpense;
+  final ValueChanged<Expense> onEditExpense;
+
+  // Gastos fijos (arriendo, nómina…).
+  final VoidCallback onNewRecurring;
+  final ValueChanged<RecurringExpense> onEditRecurring;
+  final ValueChanged<RecurringExpense> onToggleRecurring;
+  final ValueChanged<RecurringExpense> onDeleteRecurring;
+
+  /// Paga la comisión pendiente del empleado en el mes (año, mes).
+  final void Function(MonthlyCommission item, int year, int month)
+  onPayCommissions;
+  final ValueChanged<CommissionPayment> onUndoPayment;
+
+  /// Exporta el resumen del mes (año, mes) en el formato elegido.
+  final void Function(int year, int month, ReportFormat format) onExport;
 
   /// Fecha actual (se puede fijar en pruebas).
   final DateTime? now;
@@ -114,7 +139,26 @@ class _AccountingSectionState extends State<AccountingSection> {
         icon: const Icon(Icons.add, size: 18),
         label: const Text('Agregar'),
       ),
-      child: _ExpenseList(expenses: expenses, onDelete: widget.onDeleteExpense),
+      child: _ExpenseList(
+        expenses: expenses,
+        onDelete: widget.onDeleteExpense,
+        onEdit: widget.onEditExpense,
+      ),
+    );
+    final payments = _PaymentsPanel(
+      monthLabel: formatMonth(_selected.year, _selected.month),
+      items: controller.commissionsForMonth(_selected.year, _selected.month),
+      payments: controller.paymentsIn(_selected.year, _selected.month),
+      onPay: (item) =>
+          widget.onPayCommissions(item, _selected.year, _selected.month),
+      onUndo: widget.onUndoPayment,
+    );
+    final recurring = _RecurringPanel(
+      items: controller.recurringExpenses,
+      onNew: widget.onNewRecurring,
+      onEdit: widget.onEditRecurring,
+      onToggle: widget.onToggleRecurring,
+      onDelete: widget.onDeleteRecurring,
     );
 
     return Column(
@@ -157,6 +201,21 @@ class _AccountingSectionState extends State<AccountingSection> {
           breakdown,
           const SizedBox(height: 18),
           expenseList,
+        ],
+        const SizedBox(height: 18),
+        if (isDesktop)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: payments),
+              const SizedBox(width: 18),
+              Expanded(child: recurring),
+            ],
+          )
+        else ...[
+          payments,
+          const SizedBox(height: 18),
+          recurring,
         ],
         const SizedBox(height: 18),
         _Panel(
@@ -214,16 +273,47 @@ class _AccountingSectionState extends State<AccountingSection> {
             ],
           ),
         ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
+        // Wrap: en el celular los botones bajan de línea si no caben.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            if (!_isCurrentMonth) ...[
+            if (!_isCurrentMonth)
               TextButton(
                 onPressed: () => setState(() => _selected = _currentMonth),
                 child: const Text('Ir al mes actual'),
               ),
-              const SizedBox(width: 8),
-            ],
+            PopupMenuButton<ReportFormat>(
+              tooltip: 'Descargar el resumen del mes',
+              onSelected: (format) =>
+                  widget.onExport(_selected.year, _selected.month, format),
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: ReportFormat.pdf,
+                  child: ListTile(
+                    leading: Icon(Icons.picture_as_pdf_outlined),
+                    title: Text('PDF'),
+                    subtitle: Text('Para imprimir o enviar'),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: ReportFormat.excel,
+                  child: ListTile(
+                    leading: Icon(Icons.table_view_outlined),
+                    title: Text('Excel (.xlsx)'),
+                    subtitle: Text('Para el contador'),
+                  ),
+                ),
+              ],
+              child: IgnorePointer(
+                child: OutlinedButton.icon(
+                  onPressed: () {},
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text('Exportar'),
+                ),
+              ),
+            ),
             FilledButton.icon(
               onPressed: () => widget.onNewExpense(_suggestedExpenseDate),
               icon: const Icon(Icons.add),
@@ -438,10 +528,15 @@ class _CategoryBreakdown extends StatelessWidget {
 }
 
 class _ExpenseList extends StatelessWidget {
-  const _ExpenseList({required this.expenses, required this.onDelete});
+  const _ExpenseList({
+    required this.expenses,
+    required this.onDelete,
+    required this.onEdit,
+  });
 
   final List<Expense> expenses;
   final ValueChanged<Expense> onDelete;
+  final ValueChanged<Expense> onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -464,9 +559,28 @@ class _ExpenseList extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        expense.description,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              expense.description,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          if (expense.isRecurring) ...[
+                            const SizedBox(width: 6),
+                            const Tooltip(
+                              message: 'Registrado por un gasto fijo',
+                              child: Icon(
+                                Icons.autorenew_rounded,
+                                size: 15,
+                                color: AppColors.info,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 3),
                       Text(
@@ -482,6 +596,15 @@ class _ExpenseList extends StatelessWidget {
                 Text(
                   formatMoney(expense.amount),
                   style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  tooltip: 'Editar gasto',
+                  onPressed: () => onEdit(expense),
+                  icon: const Icon(
+                    Icons.edit_outlined,
+                    color: AppColors.secondaryText,
+                    size: 20,
+                  ),
                 ),
                 IconButton(
                   tooltip: 'Eliminar gasto',
@@ -634,6 +757,233 @@ class _CommissionsPanel extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Pago de comisiones del mes: cuánto generó cada empleado, cuánto se le
+/// pagó y el botón para pagar lo pendiente; debajo, los pagos registrados.
+class _PaymentsPanel extends StatelessWidget {
+  const _PaymentsPanel({
+    required this.monthLabel,
+    required this.items,
+    required this.payments,
+    required this.onPay,
+    required this.onUndo,
+  });
+
+  final String monthLabel;
+  final List<MonthlyCommission> items;
+  final List<CommissionPayment> payments;
+  final ValueChanged<MonthlyCommission> onPay;
+  final ValueChanged<CommissionPayment> onUndo;
+
+  @override
+  Widget build(BuildContext context) {
+    const small = TextStyle(color: AppColors.secondaryText, fontSize: 12);
+
+    return _Panel(
+      title: 'Pago de comisiones',
+      subtitle: '$monthLabel · servicios terminados en el mes',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (items.isEmpty)
+            const Text(
+              'No hay comisiones en este mes.',
+              style: TextStyle(color: AppColors.secondaryText),
+            ),
+          for (final item in items)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 7),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.employeeName,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${item.finishedCount} servicio(s) · '
+                          '${formatMoney(item.amount)} · pagado '
+                          '${formatMoney(item.paidAmount)}',
+                          style: small,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (item.pendingOperations.isNotEmpty)
+                    FilledButton.tonalIcon(
+                      onPressed: () => onPay(item),
+                      icon: const Icon(Icons.payments_outlined, size: 18),
+                      label: Text('Pagar ${formatMoney(item.pendingAmount)}'),
+                    )
+                  else
+                    const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.check_circle_rounded,
+                          size: 18,
+                          color: AppColors.accent,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Pagada',
+                          style: TextStyle(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          if (payments.isNotEmpty) ...[
+            const Divider(height: 26, color: AppColors.border),
+            const Text(
+              'Pagos registrados',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            for (final payment in payments)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${formatDate(payment.paidAt)} · ${payment.employeeName} '
+                      '· ${formatMoney(payment.amount)} '
+                      '(${payment.serviceCount} serv.)',
+                      style: small,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onUndo(payment),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.secondaryText,
+                    ),
+                    child: const Text('Deshacer'),
+                  ),
+                ],
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Gastos fijos mensuales: se registran solos cada mes.
+class _RecurringPanel extends StatelessWidget {
+  const _RecurringPanel({
+    required this.items,
+    required this.onNew,
+    required this.onEdit,
+    required this.onToggle,
+    required this.onDelete,
+  });
+
+  final List<RecurringExpense> items;
+  final VoidCallback onNew;
+  final ValueChanged<RecurringExpense> onEdit;
+  final ValueChanged<RecurringExpense> onToggle;
+  final ValueChanged<RecurringExpense> onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    const small = TextStyle(color: AppColors.secondaryText, fontSize: 12);
+    final monthly = items
+        .where((i) => i.active)
+        .fold<int>(0, (total, i) => total + i.amount);
+
+    return _Panel(
+      title: 'Gastos fijos',
+      subtitle: items.isEmpty
+          ? 'Arriendo, nómina, internet… se registran solos cada mes'
+          : 'Total mensual activo: ${formatMoney(monthly)}',
+      trailing: TextButton.icon(
+        onPressed: onNew,
+        icon: const Icon(Icons.add, size: 18),
+        label: const Text('Agregar'),
+      ),
+      child: items.isEmpty
+          ? const Text(
+              'Crea un gasto fijo y la app lo registrará automáticamente '
+              'cada mes en el día que elijas.',
+              style: TextStyle(color: AppColors.secondaryText),
+            )
+          : Column(
+              children: [
+                for (final item in items)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          item.active
+                              ? Icons.autorenew_rounded
+                              : Icons.pause_circle_outline_rounded,
+                          size: 20,
+                          color: item.active
+                              ? AppColors.info
+                              : AppColors.mutedText,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.description,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: item.active
+                                      ? null
+                                      : AppColors.secondaryText,
+                                ),
+                              ),
+                              Text(
+                                '${formatMoney(item.amount)} · día '
+                                '${item.dayOfMonth} · ${item.category}'
+                                '${item.active ? '' : ' · en pausa'}',
+                                style: small,
+                              ),
+                            ],
+                          ),
+                        ),
+                        PopupMenuButton<String>(
+                          tooltip: 'Opciones',
+                          onSelected: (action) => switch (action) {
+                            'edit' => onEdit(item),
+                            'toggle' => onToggle(item),
+                            _ => onDelete(item),
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Text('Editar'),
+                            ),
+                            PopupMenuItem(
+                              value: 'toggle',
+                              child: Text(item.active ? 'Pausar' : 'Reanudar'),
+                            ),
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Text('Eliminar'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
     );
   }
 }

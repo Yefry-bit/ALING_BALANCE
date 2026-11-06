@@ -43,6 +43,25 @@ class FakeApi {
 
   final List<Map<String, dynamic>> clients = [];
   final List<Map<String, dynamic>> expenses = [];
+  final List<Map<String, dynamic>> recurringExpenses = [];
+  final List<Map<String, dynamic>> backups = [];
+  final List<Map<String, dynamic>> commissionPayments = [];
+  int _nextRecurringId = 1;
+  int _nextPaymentId = 1;
+
+  /// Versión de las credenciales de cada usuario: al cambiar la contraseña o
+  /// el rol aumenta y los tokens anteriores dejan de servir.
+  final Map<int, int> _stamps = {};
+
+  /// Último "rememberMe" recibido en el login.
+  bool? lastRememberMe;
+
+  String tokenFor(int userId) {
+    final stamp = _stamps[userId] ?? 0;
+    return stamp == 0 ? 'token-$userId' : 'token-$userId.$stamp';
+  }
+
+  int _commission(int price) => (price * 0.3).round();
 
   Map<String, dynamic> addClient({
     required String name,
@@ -87,7 +106,7 @@ class FakeApi {
     required String date,
     String category = 'Arriendo',
   }) {
-    final expense = {
+    final expense = <String, dynamic>{
       'id': _nextExpenseId++,
       'description': description,
       'category': category,
@@ -189,6 +208,43 @@ class FakeApi {
     final isAdmin = current['role'] == 'administrador';
 
     switch (segments[1]) {
+      case 'auth':
+        if (segments[2] == 'me') return _json(200, current);
+        // POST /api/auth/change-password
+        final id = current['id'] as int;
+        if (_passwords[id] != body['currentPassword']) {
+          return _json(400, {
+            'errors': {
+              'currentPassword': ['La contraseña actual no es correcta.'],
+            },
+          });
+        }
+        _passwords[id] = body['newPassword'].toString();
+        _stamps[id] = (_stamps[id] ?? 0) + 1;
+        return _session(current);
+      case 'backups':
+        if (!isAdmin) return _forbidden();
+        if (method == 'POST') {
+          final file = <String, dynamic>{
+            'name': 'alingbalance-${backups.length + 1}.db',
+            'sizeBytes': 2048000,
+            'createdAt': DateTime.now().toUtc().toIso8601String(),
+          };
+          backups.insert(0, file);
+          return _json(201, file);
+        }
+        return _json(200, {
+          'available': true,
+          'folder': r'C:	allerackups',
+          'keep': 30,
+          'files': backups,
+        });
+      case 'recurring-expenses':
+        if (!isAdmin) return _forbidden();
+        return _recurring(method, segments, body);
+      case 'commissions':
+        if (!isAdmin) return _forbidden();
+        return _commissions(method, segments, body, current);
       case 'users':
         if (!isAdmin) return _forbidden();
         return _users(method, segments, body, current);
@@ -219,9 +275,15 @@ class FakeApi {
     final header = request.headers['Authorization'] ?? '';
     if (!header.startsWith('Bearer token-')) return null;
 
-    final id = int.tryParse(header.substring('Bearer token-'.length));
+    final parts = header.substring('Bearer token-'.length).split('.');
+    final id = int.tryParse(parts[0]);
+    final stamp = parts.length > 1 ? int.tryParse(parts[1]) ?? -1 : 0;
     for (final user in users) {
-      if (user['id'] == id && user['active'] == true) return user;
+      if (user['id'] == id &&
+          user['active'] == true &&
+          (_stamps[id] ?? 0) == stamp) {
+        return user;
+      }
     }
     return null;
   }
@@ -243,9 +305,17 @@ class FakeApi {
       );
     }
 
+    lastRememberMe = body['rememberMe'] as bool?;
+    return _session(user, remember: lastRememberMe ?? false);
+  }
+
+  http.Response _session(Map<String, dynamic> user, {bool remember = false}) {
+    final expires = DateTime.now().toUtc().add(
+      remember ? const Duration(days: 30) : const Duration(hours: 8),
+    );
     return _json(200, {
-      'token': 'token-${user['id']}',
-      'expiresAt': DateTime.now().toUtc().toIso8601String(),
+      'token': tokenFor(user['id'] as int),
+      'expiresAt': expires.toIso8601String(),
       'user': user,
     });
   }
@@ -272,9 +342,30 @@ class FakeApi {
       return _json(201, user);
     }
 
-    // PATCH /api/users/{id}/active
     final id = int.parse(segments[2]);
     final user = users.firstWhere((u) => u['id'] == id);
+
+    // PUT /api/users/{id}
+    if (method == 'PUT') {
+      if (user['role'] != body['role']) {
+        if (id == current['id']) {
+          return _problem(400, 'No puedes cambiar tu propio rol.');
+        }
+        user['role'] = body['role'];
+        _stamps[id] = (_stamps[id] ?? 0) + 1;
+      }
+      user['name'] = body['name'];
+      return _json(200, user);
+    }
+
+    // PATCH /api/users/{id}/password
+    if (segments.length == 4 && segments[3] == 'password') {
+      _passwords[id] = body['password'].toString();
+      _stamps[id] = (_stamps[id] ?? 0) + 1;
+      return http.Response('', 204);
+    }
+
+    // PATCH /api/users/{id}/active
     user['active'] = body['active'];
     return _json(200, user);
   }
@@ -376,9 +467,31 @@ class FakeApi {
       return _json(201, service);
     }
 
-    // PATCH /api/services/{operation}/status
     final operation = int.parse(segments[2]);
     final service = services.firstWhere((s) => s['operation'] == operation);
+
+    // PATCH /api/services/{operation}/employee
+    if (segments[3] == 'employee') {
+      if (current['role'] != 'administrador') return _forbidden();
+      if (service['commissionPaymentId'] != null) {
+        return _problem(409, 'La comisión de este servicio ya se pagó.');
+      }
+      final employee = employees.firstWhere(
+        (e) => e['id'] == body['employeeId'],
+      );
+      service['employeeId'] = employee['id'];
+      service['employeeName'] = employee['name'];
+      return _json(200, service);
+    }
+
+    // PATCH /api/services/{operation}/status
+    if (body['status'] == 'En proceso' &&
+        service['commissionPaymentId'] != null) {
+      return _problem(
+        409,
+        'No se puede reabrir: la comisión de este servicio ya se pagó.',
+      );
+    }
     service['status'] = body['status'];
     service['finishedAt'] = body['status'] == 'Terminado'
         ? DateTime.now().toUtc().toIso8601String()
@@ -482,9 +595,143 @@ class FakeApi {
       );
     }
 
-    // DELETE /api/expenses/{id}
     final id = int.parse(segments[2]);
+
+    // PUT /api/expenses/{id}
+    if (method == 'PUT') {
+      final expense = expenses.firstWhere((e) => e['id'] == id);
+      expense
+        ..['description'] = body['description']
+        ..['category'] = body['category']
+        ..['amount'] = body['amount']
+        ..['date'] = body['date'];
+      return _json(200, expense);
+    }
+
+    // DELETE /api/expenses/{id}
     expenses.removeWhere((e) => e['id'] == id);
+    return http.Response('', 204);
+  }
+
+  /// Fecha de hoy que usa el servidor falso para los gastos fijos.
+  DateTime today = DateTime.now();
+
+  http.Response _recurring(
+    String method,
+    List<String> segments,
+    Map<String, dynamic> body,
+  ) {
+    if (method == 'GET') return _json(200, recurringExpenses);
+
+    void generateThisMonth(Map<String, dynamic> item) {
+      final day = item['dayOfMonth'] as int;
+      if (item['active'] != true || day > today.day) return;
+      final date = DateTime(today.year, today.month, day);
+      final iso =
+          '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+          '${day.toString().padLeft(2, '0')}';
+      if (expenses.any(
+        (e) => e['recurringExpenseId'] == item['id'] && e['date'] == iso,
+      )) {
+        return;
+      }
+      addExpense(
+        description: item['description'].toString(),
+        category: item['category'].toString(),
+        amount: item['amount'] as int,
+        date: iso,
+      )['recurringExpenseId'] = item['id'];
+    }
+
+    if (method == 'POST') {
+      final item = <String, dynamic>{
+        'id': _nextRecurringId++,
+        'description': body['description'],
+        'category': body['category'],
+        'amount': body['amount'],
+        'dayOfMonth': body['dayOfMonth'],
+        'active': body['active'] ?? true,
+      };
+      recurringExpenses.add(item);
+      if (body['includeCurrentMonth'] != false) generateThisMonth(item);
+      return _json(201, item);
+    }
+
+    final id = int.parse(segments[2]);
+    final item = recurringExpenses.firstWhere((r) => r['id'] == id);
+
+    if (method == 'PUT') {
+      item
+        ..['description'] = body['description']
+        ..['category'] = body['category']
+        ..['amount'] = body['amount']
+        ..['dayOfMonth'] = body['dayOfMonth']
+        ..['active'] = body['active'] ?? item['active'];
+      return _json(200, item);
+    }
+
+    // DELETE
+    recurringExpenses.remove(item);
+    for (final e in expenses) {
+      if (e['recurringExpenseId'] == id) e['recurringExpenseId'] = null;
+    }
+    return http.Response('', 204);
+  }
+
+  http.Response _commissions(
+    String method,
+    List<String> segments,
+    Map<String, dynamic> body,
+    Map<String, dynamic> current,
+  ) {
+    // /api/commissions/payments[/{id}]
+    if (method == 'GET') return _json(200, commissionPayments);
+
+    if (method == 'POST') {
+      final employeeId = body['employeeId'] as int;
+      final operations = (body['operations'] as List).cast<int>();
+      final selected = services
+          .where((s) => operations.contains(s['operation']))
+          .toList();
+      final valid =
+          selected.length == operations.length &&
+          selected.every(
+            (s) =>
+                s['employeeId'] == employeeId &&
+                s['status'] == 'Terminado' &&
+                s['commissionPaymentId'] == null,
+          );
+      if (!valid) return _problem(409, 'Algunos servicios cambiaron.');
+
+      final payment = <String, dynamic>{
+        'id': _nextPaymentId++,
+        'employeeId': employeeId,
+        'employeeName': employees.firstWhere(
+          (e) => e['id'] == employeeId,
+        )['name'],
+        'year': body['year'],
+        'month': body['month'],
+        'amount': selected.fold<int>(
+          0,
+          (total, s) => total + _commission(s['price'] as int),
+        ),
+        'serviceCount': selected.length,
+        'paidAt': DateTime.now().toUtc().toIso8601String(),
+        'paidBy': current['name'],
+      };
+      commissionPayments.insert(0, payment);
+      for (final s in selected) {
+        s['commissionPaymentId'] = payment['id'];
+      }
+      return _json(201, payment);
+    }
+
+    // DELETE /api/commissions/payments/{id}
+    final id = int.parse(segments[3]);
+    commissionPayments.removeWhere((p) => p['id'] == id);
+    for (final s in services) {
+      if (s['commissionPaymentId'] == id) s['commissionPaymentId'] = null;
+    }
     return http.Response('', 204);
   }
 

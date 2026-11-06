@@ -42,11 +42,60 @@ public class AuthController(AppDbContext db, PasswordService passwords, TokenSer
                 "Esta cuenta está desactivada. Consulta al administrador.");
         }
 
-        var (token, expiresAt) = tokens.Create(user);
-        return Ok(new LoginResponse(
+        return Ok(Session(user, request.RememberMe ?? false));
+    }
+
+    /// <summary>
+    /// Cambia la contraseña de la cuenta actual. Las demás sesiones abiertas
+    /// se cierran; se devuelve un token nuevo para seguir en este dispositivo.
+    /// </summary>
+    [HttpPost("change-password")]
+    [Authorize]
+    [EnableRateLimiting("login")]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequest request)
+    {
+        var errors = new ErrorBag();
+
+        if (string.IsNullOrEmpty(request.CurrentPassword))
+        {
+            errors.Add("currentPassword", "Ingresa tu contraseña actual.");
+        }
+
+        errors.Add("newPassword", Rules.CheckPassword(request.NewPassword));
+
+        if (!errors.Has("newPassword") && request.NewPassword == request.CurrentPassword)
+        {
+            errors.Add("newPassword", "La contraseña nueva debe ser diferente a la actual.");
+        }
+
+        if (errors.HasErrors) return Invalid(errors);
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == User.GetUserId());
+        if (user is null)
+        {
+            return Fail(StatusCodes.Status404NotFound, "No se encontró el usuario.");
+        }
+
+        if (!passwords.Verify(request.CurrentPassword!, user.PasswordHash))
+        {
+            errors.Add("currentPassword", "La contraseña actual no es correcta.");
+            return Invalid(errors);
+        }
+
+        user.PasswordHash = passwords.Hash(request.NewPassword!);
+        user.SecurityStamp = TokenService.NewStamp();
+        await db.SaveChangesAsync();
+
+        return Ok(Session(user, User.IsRememberedSession()));
+    }
+
+    private LoginResponse Session(Domain.AppUser user, bool remember)
+    {
+        var (token, expiresAt) = tokens.Create(user, remember);
+        return new LoginResponse(
             token,
             DateTime.SpecifyKind(expiresAt, DateTimeKind.Utc),
-            UserDto.From(user)));
+            UserDto.From(user));
     }
 
     /// <summary>Datos del usuario con la sesión actual.</summary>

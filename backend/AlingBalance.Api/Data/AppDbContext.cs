@@ -63,6 +63,8 @@ public class AppDbContext(DbContextOptions options) : DbContext(options)
             entity.Property(s => s.Status).HasMaxLength(20).IsRequired();
             entity.Property(s => s.RegisteredBy).HasMaxLength(80).IsRequired();
             entity.Property(s => s.EmployeeName).HasMaxLength(80).IsRequired();
+            entity.Property(s => s.ContactName).HasMaxLength(80).IsRequired();
+            entity.Property(s => s.ContactPhone).HasMaxLength(10).IsRequired();
 
             // Si se borrara un empleado, sus servicios se conservan sin asignar.
             entity.HasOne(s => s.Employee)

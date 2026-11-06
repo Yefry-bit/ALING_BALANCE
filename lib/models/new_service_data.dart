@@ -12,6 +12,8 @@ class NewServiceData {
     required this.status,
     required this.price,
     this.employeeId,
+    this.contactName = '',
+    this.contactPhone = '',
   });
 
   final String plate;
@@ -23,6 +25,10 @@ class NewServiceData {
   final int price;
   final int? employeeId;
 
+  /// A quién avisar cuando el vehículo esté listo (opcionales).
+  final String contactName;
+  final String contactPhone;
+
   Map<String, dynamic> toJson() {
     return {
       'plate': plate,
@@ -33,6 +39,8 @@ class NewServiceData {
       'status': status.label,
       'price': price,
       'employeeId': employeeId,
+      'contactName': contactName,
+      'contactPhone': contactPhone,
     };
   }
 }

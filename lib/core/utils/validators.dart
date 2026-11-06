@@ -24,6 +24,7 @@ abstract final class Validators {
   static final RegExp _username = RegExp(r'^[a-z0-9._]+$');
   static final RegExp _document = RegExp(r'^\d{5,12}$');
   static final RegExp _phone = RegExp(r'^(\d{7}|3\d{9}|60\d{8})$');
+  static final RegExp _mobile = RegExp(r'^3\d{9}$');
 
   // ------------------------------------------------------------ Normalizar
 
@@ -89,6 +90,20 @@ abstract final class Validators {
     if (phone.isEmpty) return null;
     if (!_phone.hasMatch(phone)) {
       return 'El teléfono debe tener 7 dígitos (fijo) o 10 dígitos (celular).';
+    }
+    return null;
+  }
+
+  /// Celular de contacto del servicio: obligatorio y debe ser un celular
+  /// (10 dígitos que empiezan por 3), que es el número al que se envía el
+  /// aviso por WhatsApp.
+  static String? mobilePhone(String? value) {
+    final phone = normalizePhone(value);
+
+    if (phone.isEmpty) return 'Ingresa el celular del cliente.';
+    if (!_mobile.hasMatch(phone)) {
+      return 'El celular debe tener 10 dígitos y empezar por 3 '
+          '(para avisar por WhatsApp).';
     }
     return null;
   }

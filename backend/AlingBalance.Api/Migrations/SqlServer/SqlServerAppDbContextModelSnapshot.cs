@@ -348,6 +348,16 @@ namespace AlingBalance.Api.Migrations.SqlServer
                     b.Property<int?>("CommissionPaymentId")
                         .HasColumnType("int");
 
+                    b.Property<string>("ContactName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("ContactPhone")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
                     b.Property<DateTime>("Date")
                         .HasColumnType("datetime2");
 

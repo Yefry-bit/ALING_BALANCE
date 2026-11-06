@@ -380,6 +380,35 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261106050000_ContactoDelServicio'
+)
+BEGIN
+    ALTER TABLE [Services] ADD [ContactName] nvarchar(80) NOT NULL DEFAULT N'';
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261106050000_ContactoDelServicio'
+)
+BEGIN
+    ALTER TABLE [Services] ADD [ContactPhone] nvarchar(10) NOT NULL DEFAULT N'';
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261106050000_ContactoDelServicio'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261106050000_ContactoDelServicio', N'10.0.14');
+END;
+
+COMMIT;
+GO
+
 -- Administrador inicial: admin / admin123 (cámbiala al entrar en
 -- "Cambiar contraseña"). No se agrega si ya existe.
 IF NOT EXISTS (SELECT 1 FROM dbo.Users WHERE Username = N'admin')

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../core/constants/app_colors.dart';
 import '../core/constants/service_catalog.dart';
 import '../core/constants/vehicle_catalog.dart';
+import '../core/utils/client_notifier.dart';
 import '../core/utils/upper_case_formatter.dart';
 import '../core/utils/validators.dart';
 import '../models/client.dart';
@@ -58,6 +59,8 @@ class _ServiceFormDialogState extends State<ServiceFormDialog> {
   final _brandController = TextEditingController();
   final _modelController = TextEditingController();
   final _priceController = TextEditingController();
+  final _contactNameController = TextEditingController();
+  final _contactPhoneController = TextEditingController();
 
   String _vehicleType = 'Particular';
   String _selectedService = 'Alineación sencilla';
@@ -69,6 +72,9 @@ class _ServiceFormDialogState extends State<ServiceFormDialog> {
 
   /// Cliente al que pertenece la placa escrita (si está registrada).
   Client? _owner;
+
+  /// Si ya se escribió el contacto a mano, no se vuelve a autocompletar.
+  bool _contactTouched = false;
 
   @override
   void initState() {
@@ -85,7 +91,20 @@ class _ServiceFormDialogState extends State<ServiceFormDialog> {
         _updateSuggestedPrice();
       }
       _owner = widget.clientForPlate?.call(vehicle.plate);
+      _prefillContact(_owner);
     }
+  }
+
+  /// Sugiere como contacto al dueño de la placa (si tiene celular con
+  /// WhatsApp), salvo que ya se haya escrito otro a mano.
+  void _prefillContact(Client? owner) {
+    if (_contactTouched) return;
+
+    _contactNameController.text = owner?.name ?? '';
+    _contactPhoneController.text =
+        owner != null && whatsappNumber(owner.phone) != null
+        ? Validators.normalizePhone(owner.phone)
+        : '';
   }
 
   /// Si la placa pertenece a un vehículo registrado, completa marca, modelo
@@ -97,6 +116,7 @@ class _ServiceFormDialogState extends State<ServiceFormDialog> {
 
     setState(() {
       _owner = owner;
+      _prefillContact(owner);
       if (vehicle == null) return;
 
       _brandController.text = vehicle.brand;
@@ -114,6 +134,8 @@ class _ServiceFormDialogState extends State<ServiceFormDialog> {
     _brandController.dispose();
     _modelController.dispose();
     _priceController.dispose();
+    _contactNameController.dispose();
+    _contactPhoneController.dispose();
     super.dispose();
   }
 
@@ -144,6 +166,8 @@ class _ServiceFormDialogState extends State<ServiceFormDialog> {
         status: _status,
         price: int.parse(_priceController.text.trim()),
         employeeId: _employeeId,
+        contactName: Validators.normalizeText(_contactNameController.text),
+        contactPhone: Validators.normalizePhone(_contactPhoneController.text),
       ),
     );
 
@@ -340,6 +364,45 @@ class _ServiceFormDialogState extends State<ServiceFormDialog> {
                         ? null
                         : (value) => setState(() => _employeeId = value),
                   ),
+                const SizedBox(height: 16),
+                _fieldLabel('Cliente (se le avisa por WhatsApp)'),
+                TextFormField(
+                  controller: _contactNameController,
+                  enabled: !_saving,
+                  textCapitalization: TextCapitalization.words,
+                  maxLength: 80,
+                  onChanged: (_) => _contactTouched = true,
+                  decoration: const InputDecoration(
+                    hintText: 'Nombre del cliente',
+                    prefixIcon: Icon(Icons.person_outline),
+                    counterText: '',
+                  ),
+                  validator: (value) => Validators.personName(
+                    value,
+                    label: 'El nombre del cliente',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _contactPhoneController,
+                  enabled: !_saving,
+                  keyboardType: TextInputType.phone,
+                  maxLength: 16,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9+\s()-]')),
+                  ],
+                  onChanged: (_) => _contactTouched = true,
+                  decoration: const InputDecoration(
+                    hintText: 'Celular. Ej. 300 123 4567',
+                    prefixIcon: Icon(Icons.smartphone_outlined),
+                    counterText: '',
+                    helperText:
+                        'Al terminar el servicio se abre WhatsApp con el aviso '
+                        'listo para enviarle.',
+                    helperMaxLines: 2,
+                  ),
+                  validator: Validators.mobilePhone,
+                ),
                 const SizedBox(height: 16),
                 _fieldLabel('Precio del servicio (COP)'),
                 TextFormField(

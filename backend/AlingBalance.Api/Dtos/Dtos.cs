@@ -61,7 +61,9 @@ public record ServiceDto(
     string EmployeeName,
     int PhotoCount = 0,
     DateTime? FinishedAt = null,
-    int? CommissionPaymentId = null)
+    int? CommissionPaymentId = null,
+    string ContactName = "",
+    string ContactPhone = "")
 {
     public static ServiceDto From(ServiceRecord s, int photoCount = 0) => new(
         s.Operation,
@@ -80,7 +82,9 @@ public record ServiceDto(
         s.FinishedAt is DateTime finished
             ? DateTime.SpecifyKind(finished, DateTimeKind.Utc)
             : null,
-        s.CommissionPaymentId);
+        s.CommissionPaymentId,
+        s.ContactName,
+        s.ContactPhone);
 }
 
 // ------------------------------------------------------------------- Fotos
@@ -120,7 +124,9 @@ public record CreateServiceRequest(
     string? ServiceType,
     string? Status,
     int? Price,
-    int? EmployeeId);
+    int? EmployeeId,
+    string? ContactName = null,
+    string? ContactPhone = null);
 
 public record UpdateStatusRequest(string? Status);
 

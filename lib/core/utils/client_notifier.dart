@@ -19,26 +19,57 @@ String? whatsappNumber(String phone) {
   return '57$digits';
 }
 
-/// Mensaje de "su vehículo está listo".
+/// Mensaje de "su vehículo está listo". Usa el formato de WhatsApp (*negrita*
+/// y _cursiva_), emojis y secciones para que se vea como un comprobante.
 String readyMessage({
   required String clientName,
   required ServiceRecord service,
   bool includePrice = true,
 }) {
   final firstName = clientName.trim().split(RegExp(r'\s+')).first;
-  final price = includePrice ? ' Valor: ${formatMoney(service.price)}.' : '';
-  return 'Hola $firstName, le escribimos de $shopName. Su vehículo '
-      '${service.vehicle} de placa ${service.plate} ya está listo '
-      '(${service.service}).$price Puede pasar a recogerlo cuando quiera. '
-      '¡Gracias por su confianza!';
+  final greeting = firstName.isEmpty ? 'Hola' : 'Hola *$firstName*';
+
+  return [
+    '✅ *¡Su vehículo está listo!* 🎉',
+    '',
+    '$greeting, le escribimos de *$shopName*.',
+    '',
+    '🚗 *Detalle del servicio*',
+    '*Vehículo:* _${service.vehicle}_',
+    '*Placa:* _${service.plate}_',
+    '*Servicio:* _${service.service}_',
+    if (includePrice) '*Valor:* _${formatMoney(service.price)}_',
+    '',
+    '📍 Puede pasar a recogerlo cuando quiera.',
+    '🙏 _¡Gracias por su confianza!_',
+  ].join('\n');
 }
 
-/// Enlace que abre WhatsApp con el mensaje escrito (en el celular abre la
-/// app; en el computador, WhatsApp Web o la app de escritorio).
+/// El mismo mensaje sin las marcas de formato de WhatsApp (`*` y `_`), para
+/// los SMS, que no interpretan negritas ni cursivas.
+String plainText(String message) => message.replaceAll(RegExp(r'[*_]'), '');
+
+/// Si la app corre en el navegador o en un computador (no en un celular).
+bool get isDesktopOrWeb =>
+    kIsWeb ||
+    defaultTargetPlatform == TargetPlatform.windows ||
+    defaultTargetPlatform == TargetPlatform.macOS ||
+    defaultTargetPlatform == TargetPlatform.linux;
+
+/// Enlace que abre WhatsApp con el mensaje escrito.
+///
+/// - En el celular usa `wa.me`, que abre la app de WhatsApp.
+/// - En el navegador o el computador usa WhatsApp Web: el enlace `wa.me` puede
+///   abrir la app de escritorio de Windows, que pierde los emojis del mensaje
+///   (los muestra como "�"). WhatsApp Web los conserva.
 ///
 /// Los espacios van como %20 (no "+"), que es lo que esperan WhatsApp y SMS.
-Uri whatsappUri(String number, String message) =>
-    Uri.parse('https://wa.me/$number?text=${Uri.encodeComponent(message)}');
+Uri whatsappUri(String number, String message, {bool? desktop}) {
+  final text = Uri.encodeComponent(message);
+  return (desktop ?? isDesktopOrWeb)
+      ? Uri.parse('https://web.whatsapp.com/send?phone=$number&text=$text')
+      : Uri.parse('https://wa.me/$number?text=$text');
+}
 
 /// Enlace que abre los mensajes de texto (SMS) con el mensaje escrito.
 Uri smsUri(String number, String message) =>

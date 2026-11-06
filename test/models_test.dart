@@ -28,6 +28,44 @@ void main() {
     expect(copy.date, original.date);
   });
 
+  test('ServiceRecord conserva el contacto al que se avisa', () {
+    final service = ServiceRecord(
+      operation: 3,
+      plate: 'ABC-123',
+      vehicle: 'Kia Rio',
+      vehicleType: 'Taxi',
+      service: 'Balanceo',
+      status: ServiceStatus.inProgress,
+      price: 30000,
+      date: DateTime(2026, 11, 5),
+      contactName: 'Ana Torres',
+      contactPhone: '3001234567',
+    );
+
+    final copy = ServiceRecord.fromJson(service.toJson());
+    expect(copy.contactName, 'Ana Torres');
+    expect(copy.contactPhone, '3001234567');
+
+    // Cambiar el estado no pierde el contacto.
+    final finished = service.copyWith(status: ServiceStatus.finished);
+    expect(finished.contactName, 'Ana Torres');
+    expect(finished.contactPhone, '3001234567');
+
+    // Servicios anteriores a este dato llegan sin contacto.
+    final legacy = ServiceRecord.fromJson({
+      'operation': 4,
+      'plate': 'DEF-456',
+      'vehicle': 'Renault Logan',
+      'vehicleType': 'Particular',
+      'service': 'Balanceo',
+      'status': 'Terminado',
+      'price': 30000,
+      'date': '2026-10-01T00:00:00.000',
+    });
+    expect(legacy.contactName, isEmpty);
+    expect(legacy.contactPhone, isEmpty);
+  });
+
   test(
     'ServiceRecord conserva el empleado asignado y tolera datos antiguos',
     () {

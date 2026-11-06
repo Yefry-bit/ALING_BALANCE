@@ -195,6 +195,11 @@ void main() {
     await tester.tap(find.text('Spark GT').last);
     await tester.pumpAndSettle();
 
+    // El nombre y el celular del cliente son obligatorios.
+    await tester.ensureVisible(fields.at(3));
+    await tester.enterText(fields.at(3), 'Ana Torres');
+    await tester.enterText(fields.at(4), '3001234567');
+
     await tester.tap(find.text('Guardar servicio'));
     await tester.pumpAndSettle();
 
@@ -245,6 +250,10 @@ void main() {
     // Cierra la lista de sugerencias.
     await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();
+
+    await tester.ensureVisible(fields.at(3));
+    await tester.enterText(fields.at(3), 'Ana Torres');
+    await tester.enterText(fields.at(4), '3001234567');
     await tester.tap(find.text('Guardar servicio'));
     await tester.pumpAndSettle();
 

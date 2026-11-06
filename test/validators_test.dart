@@ -65,6 +65,17 @@ void main() {
       expect(Validators.phone('12345'), isNotNull);
       expect(Validators.phone('2001234567'), isNotNull);
     });
+
+    test('el celular de contacto es obligatorio y debe tener WhatsApp', () {
+      expect(Validators.mobilePhone(''), isNotNull);
+      expect(Validators.mobilePhone('   '), isNotNull);
+      expect(Validators.mobilePhone('3001234567'), isNull);
+      expect(Validators.mobilePhone('300 123 4567'), isNull);
+      expect(Validators.mobilePhone('+57 300 123 4567'), isNull);
+      expect(Validators.mobilePhone('6012345678'), isNotNull); // fijo
+      expect(Validators.mobilePhone('1234567'), isNotNull);
+      expect(Validators.mobilePhone('300123456'), isNotNull); // 9 dígitos
+    });
   });
 
   group('vehículo', () {

@@ -202,49 +202,84 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ? 'Servicio #${service.operation} terminado.'
         : 'Servicio #${service.operation} terminado con $uploaded foto(s).';
 
-    // Si el carro tiene un cliente con celular, se ofrece avisarle ya.
-    if (!_canNotifyClient(service)) {
-      showMessage(context, text);
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text),
-        duration: const Duration(seconds: 8),
-        action: SnackBarAction(
-          label: 'Avisar por WhatsApp',
-          onPressed: () => _notifyClient(service),
+    showMessage(context, text);
+
+    // Si hay a quién avisar (el contacto del servicio o el dueño de la placa),
+    // WhatsApp se abre solo con el mensaje listo: solo falta tocar Enviar.
+    if (!_canNotifyClient(service)) return;
+
+    final opened = await _openWhatsApp(service);
+    if (opened || !mounted) return;
+
+    // No se pudo abrir (por ejemplo, el navegador bloqueó la ventana): queda
+    // el botón para intentarlo de nuevo.
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(text),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Avisar por WhatsApp',
+            onPressed: () => _notifyClient(service),
+          ),
         ),
-      ),
-    );
+      );
   }
 
   // ------------------------------------------------------- Avisar al cliente
 
-  /// Celular (con indicativo) del dueño del carro, si tiene WhatsApp.
+  /// Celular (con indicativo) al que se avisa, si tiene WhatsApp: primero el
+  /// contacto que se dio al registrar el servicio y, si no hay, el del dueño
+  /// de la placa.
   String? _clientNumber(ServiceRecord service) {
+    final own = whatsappNumber(service.contactPhone);
+    if (own != null) return own;
+
     final client = _controller.clientForPlate(service.plate);
     return client == null ? null : whatsappNumber(client.phone);
+  }
+
+  /// Nombre de la persona a la que se avisa (puede ser vacío).
+  String _clientName(ServiceRecord service) {
+    final owner = _controller.clientForPlate(service.plate)?.name ?? '';
+    if (whatsappNumber(service.contactPhone) == null) return owner;
+
+    final own = service.contactName.trim();
+    return own.isNotEmpty ? own : owner;
   }
 
   bool _canNotifyClient(ServiceRecord service) =>
       _clientNumber(service) != null;
 
+  /// Abre WhatsApp directo con el aviso de "vehículo listo" ya escrito.
+  /// Devuelve `false` si no hay celular o no se pudo abrir.
+  Future<bool> _openWhatsApp(ServiceRecord service) {
+    final number = _clientNumber(service);
+    if (number == null) return Future.value(false);
+
+    final message = readyMessage(
+      clientName: _clientName(service),
+      service: service,
+    );
+    return widget.messageLauncher.open(whatsappUri(number, message));
+  }
+
   /// Abre WhatsApp (o SMS en el celular) con el aviso de "vehículo listo"
   /// ya escrito; el empleado solo toca Enviar.
   Future<void> _notifyClient(ServiceRecord service) async {
-    final client = _controller.clientForPlate(service.plate);
     final number = _clientNumber(service);
-    if (client == null || number == null) {
+    if (number == null) {
       showMessage(
         context,
-        'El vehículo ${service.plate} no tiene un cliente con celular '
-        'registrado. Agrégalo en Clientes.',
+        'El servicio #${service.operation} no tiene un celular de contacto '
+        'ni un cliente con celular registrado. Agrégalo en Clientes.',
       );
       return;
     }
 
-    final message = readyMessage(clientName: client.name, service: service);
+    final name = _clientName(service);
+    final message = readyMessage(clientName: name, service: service);
     var uri = whatsappUri(number, message);
 
     if (canSendSms) {
@@ -258,7 +293,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ListTile(
                 leading: const Icon(Icons.chat, color: AppColors.whatsapp),
                 title: const Text('WhatsApp'),
-                subtitle: Text('Avisar a ${client.name}'),
+                subtitle: Text(
+                  name.isEmpty ? 'Avisar al cliente' : 'Avisar a $name',
+                ),
                 onTap: () => Navigator.pop(context, 'whatsapp'),
               ),
               ListTile(
@@ -271,7 +308,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       );
       if (choice == null || !mounted) return;
-      if (choice == 'sms') uri = smsUri(number, message);
+      if (choice == 'sms') uri = smsUri(number, plainText(message));
     }
 
     final opened = await widget.messageLauncher.open(uri);

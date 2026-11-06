@@ -56,6 +56,13 @@ public class ServicesController(AppDbContext db) : ApiControllerBase
         errors.Add("brand", Rules.CheckVehicleText(brand, "La marca"));
         errors.Add("model", Rules.CheckVehicleText(model, "El modelo"));
 
+        // Contacto para avisar por WhatsApp cuando el vehículo esté listo
+        // (nombre y celular son obligatorios).
+        var contactName = Rules.NormalizeText(request.ContactName);
+        var contactPhone = Rules.NormalizePhone(request.ContactPhone);
+        errors.Add("contactName", Rules.CheckName(contactName, "El nombre del cliente"));
+        errors.Add("contactPhone", Rules.CheckMobilePhone(contactPhone));
+
         if (!ServiceCatalog.IsValidVehicleType(vehicleType))
         {
             errors.Add("vehicleType", "Selecciona un tipo de vehículo válido.");
@@ -123,6 +130,8 @@ public class ServicesController(AppDbContext db) : ApiControllerBase
             RegisteredBy = User.GetUserName(),
             EmployeeId = employee?.Id,
             EmployeeName = employee?.Name ?? string.Empty,
+            ContactName = contactName,
+            ContactPhone = contactPhone,
         };
 
         db.Services.Add(service);

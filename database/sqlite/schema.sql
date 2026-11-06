@@ -244,6 +244,16 @@ COMMIT;
 INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
 VALUES ('20261105231939_ComisionesGastosFijosYSesiones', '10.0.14');
 
+BEGIN TRANSACTION;
+ALTER TABLE "Services" ADD "ContactName" TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE "Services" ADD "ContactPhone" TEXT NOT NULL DEFAULT '';
+
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20261106050000_ContactoDelServicio', '10.0.14');
+
+COMMIT;
+
 -- Administrador inicial: admin / admin123 (cámbiala al entrar en
 -- "Cambiar contraseña"). No se agrega si ya existe.
 INSERT INTO "Users" ("Name", "Username", "PasswordHash", "Role", "Active", "CreatedAt")

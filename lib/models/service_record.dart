@@ -17,7 +17,16 @@ class ServiceRecord {
     this.photoCount = 0,
     this.finishedAt,
     this.commissionPaymentId,
+    this.contactName = '',
+    this.contactPhone = '',
   });
+
+  /// Nombre de la persona a la que se avisa cuando el vehículo está listo
+  /// (vacío si no se pidió al registrar el servicio).
+  final String contactName;
+
+  /// Celular (10 dígitos) al que se avisa por WhatsApp; vacío si no se dio.
+  final String contactPhone;
 
   /// Pago en el que se liquidó la comisión; `null` si está pendiente.
   final int? commissionPaymentId;
@@ -86,6 +95,8 @@ class ServiceRecord {
       employeeName: employeeName,
       photoCount: photoCount ?? this.photoCount,
       finishedAt: finishedAt,
+      contactName: contactName,
+      contactPhone: contactPhone,
       commissionPaymentId: clearPayment
           ? null
           : commissionPaymentId ?? this.commissionPaymentId,
@@ -111,6 +122,8 @@ class ServiceRecord {
       finishedAt: DateTime.tryParse(json['finishedAt']?.toString() ?? '')
           ?.toLocal(),
       commissionPaymentId: (json['commissionPaymentId'] as num?)?.toInt(),
+      contactName: json['contactName']?.toString() ?? '',
+      contactPhone: json['contactPhone']?.toString() ?? '',
     );
   }
 
@@ -130,6 +143,8 @@ class ServiceRecord {
       'photoCount': photoCount,
       'finishedAt': finishedAt?.toUtc().toIso8601String(),
       'commissionPaymentId': commissionPaymentId,
+      'contactName': contactName,
+      'contactPhone': contactPhone,
     };
   }
 }

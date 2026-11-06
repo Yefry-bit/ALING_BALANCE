@@ -125,6 +125,8 @@ class FakeApi {
     required DateTime date,
     String status = 'Terminado',
     int? employeeId,
+    String contactName = '',
+    String contactPhone = '',
   }) {
     final service = {
       'operation': _nextOperation++,
@@ -138,6 +140,8 @@ class FakeApi {
       'registeredBy': 'Administrador',
       'employeeId': employeeId,
       'employeeName': employeeId == null ? '' : 'Empleado $employeeId',
+      'contactName': contactName,
+      'contactPhone': contactPhone,
     };
     services.add(service);
     return service;
@@ -462,6 +466,8 @@ class FakeApi {
         'registeredBy': current['name'],
         'employeeId': employeeId,
         'employeeName': employeeName,
+        'contactName': body['contactName'] ?? '',
+        'contactPhone': body['contactPhone'] ?? '',
       };
       services.add(service);
       return _json(201, service);

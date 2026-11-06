@@ -58,6 +58,8 @@ erDiagram
         string RegisteredBy
         int EmployeeId FK "puede ser nulo"
         string EmployeeName
+        string ContactName "cliente a quien avisar (puede estar vacío)"
+        string ContactPhone "celular del aviso por WhatsApp (puede estar vacío)"
     }
     Clients {
         int Id PK

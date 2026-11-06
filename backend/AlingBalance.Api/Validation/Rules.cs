@@ -23,6 +23,7 @@ public static class Rules
     private static readonly Regex UsernameRegex = new(@"^[a-z0-9._]+$", RegexOptions.Compiled);
     private static readonly Regex DocumentRegex = new(@"^\d{5,12}$", RegexOptions.Compiled);
     private static readonly Regex PhoneRegex = new(@"^(\d{7}|3\d{9}|60\d{8})$", RegexOptions.Compiled);
+    private static readonly Regex MobileRegex = new(@"^3\d{9}$", RegexOptions.Compiled);
 
     // ------------------------------------------------------------ Normalizar
 
@@ -96,6 +97,22 @@ public static class Rules
         if (!PhoneRegex.IsMatch(phone))
         {
             return "El teléfono debe tener 7 dígitos (fijo) o 10 dígitos (celular).";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Celular de contacto del servicio: obligatorio y debe ser un celular
+    /// colombiano (10 dígitos que empiezan por 3), porque es el número al que
+    /// se envía el aviso por WhatsApp.
+    /// </summary>
+    public static string? CheckMobilePhone(string phone)
+    {
+        if (phone.Length == 0) return "Ingresa el celular del cliente.";
+        if (!MobileRegex.IsMatch(phone))
+        {
+            return "El celular debe tener 10 dígitos y empezar por 3 (para avisar por WhatsApp).";
         }
 
         return null;

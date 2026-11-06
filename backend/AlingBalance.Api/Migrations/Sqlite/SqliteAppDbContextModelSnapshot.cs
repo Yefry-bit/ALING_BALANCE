@@ -327,6 +327,16 @@ namespace AlingBalance.Api.Migrations.Sqlite
                     b.Property<int?>("CommissionPaymentId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ContactName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContactPhone")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("Date")
                         .HasColumnType("TEXT");
 

@@ -35,6 +35,18 @@ public class ServiceRecord
     /// <summary>Nombre del empleado al momento de registrar el servicio.</summary>
     public string EmployeeName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Nombre de la persona a la que se avisa cuando el vehículo está listo.
+    /// Vacío si no se pidió al registrar el servicio.
+    /// </summary>
+    public string ContactName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Celular (10 dígitos, sin +57) al que se envía el aviso por WhatsApp.
+    /// Vacío si no se pidió al registrar el servicio.
+    /// </summary>
+    public string ContactPhone { get; set; } = string.Empty;
+
     /// <summary>Pago en el que se liquidó la comisión; null si está pendiente.</summary>
     public int? CommissionPaymentId { get; set; }
     public CommissionPayment? CommissionPayment { get; set; }

@@ -58,6 +58,17 @@ public class RulesTests
     }
 
     [Theory]
+    [InlineData("", false)] // obligatorio
+    [InlineData("3001234567", true)]
+    [InlineData("6012345678", false)] // fijo: no tiene WhatsApp
+    [InlineData("1234567", false)]
+    [InlineData("300123456", false)]
+    public void CheckMobilePhone_es_obligatorio_y_exige_celular(string phone, bool valid)
+    {
+        Assert.Equal(valid, Rules.CheckMobilePhone(phone) is null);
+    }
+
+    [Theory]
     [InlineData("+57 300 123 4567", "3001234567")]
     [InlineData("(300) 123-4567", "3001234567")]
     public void NormalizePhone_deja_solo_digitos(string raw, string expected)

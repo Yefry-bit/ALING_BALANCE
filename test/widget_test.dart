@@ -272,9 +272,19 @@ void main() {
       findsOneWidget,
     );
 
+    // El nombre llega del dueño de la placa; el celular hay que escribirlo.
+    final contactFields = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextFormField),
+    );
+    await tester.ensureVisible(contactFields.at(4));
+    await tester.enterText(contactFields.at(4), '3001234567');
+
     await tester.tap(find.text('Guardar servicio'));
     await tester.pumpAndSettle();
 
+    expect(fake.services.single['contactName'], 'Ana Torres');
+    expect(fake.services.single['contactPhone'], '3001234567');
     expect(fake.services.single['plate'], 'XYZ-987');
     expect(fake.services.single['vehicle'], 'Mazda CX-5');
     expect(fake.services.single['vehicleType'], 'Camioneta');
